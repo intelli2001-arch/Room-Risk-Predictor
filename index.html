@@ -79,7 +79,8 @@
         }
         
         .risk-danger { background: #FF4B4B; }
-        .risk-warning { background: #FFA500; }
+        .risk-imminent { background: #FFA500; }
+        .risk-caution { background: #FFD700; }
         .risk-safe { background: #00CC66; }
         
         .section {
@@ -281,14 +282,31 @@
             color: white;
         }
         
-        .slot-warning {
+        .slot-imminent {
             background: linear-gradient(135deg, #FFA500 0%, #ffb733 100%);
             color: white;
+        }
+        
+        .slot-caution {
+            background: linear-gradient(135deg, #FFD700 0%, #ffe033 100%);
+            color: #333;
         }
         
         .slot-safe {
             background: linear-gradient(135deg, #00CC66 0%, #33d685 100%);
             color: white;
+        }
+        
+        .slot-disabled {
+            background: #e0e0e0;
+            color: #999;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        
+        .slot-disabled:hover {
+            transform: none;
+            box-shadow: none;
         }
         
         .booking-summary {
@@ -418,20 +436,42 @@
         
         <div class="intro">
             <p>이 서비스는 <strong>머신러닝(RandomForest) 시뮬레이션 기반 예약 마감 확률</strong>을 제공하여 사용자가 더 합리적으로 예약 결정을 내릴 수 있도록 돕습니다.</p>
-            <div class="risk-legend">
-                <div class="risk-item">
-                    <div class="risk-dot risk-danger"></div>
-                    <span><strong>위험 (70% 이상)</strong>: 마감 가능성이 높아 빠른 예약을 권장합니다.</span>
-                </div>
-                <div class="risk-item">
-                    <div class="risk-dot risk-warning"></div>
-                    <span><strong>보통 (40~70%)</strong>: 적당한 시간 내 예약을 권장합니다.</span>
-                </div>
-                <div class="risk-item">
-                    <div class="risk-dot risk-safe"></div>
-                    <span><strong>여유 (40% 미만)</strong>: 여유롭게 예약해도 괜찮습니다.</span>
-                </div>
-            </div>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
+                <thead>
+                    <tr style="background: #f8f9fa;">
+                        <th style="padding: 8px; text-align: center;">단계</th>
+                        <th style="padding: 8px; text-align: center;">위험도</th>
+                        <th style="padding: 8px; text-align: center;">마감 확률</th>
+                        <th style="padding: 8px; text-align: left;">의미</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="padding: 8px; text-align: center;">🟢</td>
+                        <td style="padding: 8px; text-align: center;"><strong>여유</strong></td>
+                        <td style="padding: 8px; text-align: center;">0~25%</td>
+                        <td style="padding: 8px;">지금 예약하지 않아도 충분히 여유 있음</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; text-align: center;">🟡</td>
+                        <td style="padding: 8px; text-align: center;"><strong>주의</strong></td>
+                        <td style="padding: 8px; text-align: center;">25~50%</td>
+                        <td style="padding: 8px;">조금씩 찰 가능성 있음</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; text-align: center;">🟠</td>
+                        <td style="padding: 8px; text-align: center;"><strong>임박</strong></td>
+                        <td style="padding: 8px; text-align: center;">50~75%</td>
+                        <td style="padding: 8px;">예약 지연 시 확보 어려움</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; text-align: center;">🔴</td>
+                        <td style="padding: 8px; text-align: center;"><strong>위험</strong></td>
+                        <td style="padding: 8px; text-align: center;">75~100%</td>
+                        <td style="padding: 8px;">빠른 예약 필요</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
         
         <div class="divider"></div>
@@ -712,8 +752,14 @@
                 document.getElementById('dateWarning').classList.add('hidden');
                 document.getElementById('datePickerSection').classList.remove('hidden');
                 
-                document.getElementById('datePicker').value = '2026-03-15';
-                document.getElementById('datePicker').min = '2026-01-01';
+                const today = new Date();
+                const todayStr = today.toISOString().split('T')[0];
+                const minDate2026 = '2026-01-01';
+                const minDate = todayStr > minDate2026 ? todayStr : minDate2026;
+                const defaultDate = todayStr > '2026-03-15' ? todayStr : '2026-03-15';
+                
+                document.getElementById('datePicker').value = defaultDate > '2026-12-31' ? '2026-12-31' : defaultDate;
+                document.getElementById('datePicker').min = minDate > '2026-12-31' ? '2026-12-31' : minDate;
                 document.getElementById('datePicker').max = '2026-12-31';
                 
                 onDateChange();
@@ -838,10 +884,12 @@
         }
         
         function getRiskLevel(probability) {
-            if (probability >= 70) {
+            if (probability >= 75) {
                 return { level: '위험', color: '#FF4B4B', emoji: '🔴', class: 'slot-danger' };
-            } else if (probability >= 40) {
-                return { level: '보통', color: '#FFA500', emoji: '🟠', class: 'slot-warning' };
+            } else if (probability >= 50) {
+                return { level: '임박', color: '#FFA500', emoji: '🟠', class: 'slot-imminent' };
+            } else if (probability >= 25) {
+                return { level: '주의', color: '#FFD700', emoji: '🟡', class: 'slot-caution' };
             } else {
                 return { level: '여유', color: '#00CC66', emoji: '🟢', class: 'slot-safe' };
             }
@@ -877,14 +925,20 @@
                     {
                         type: 'line',
                         x0: -0.5, x1: TIME_SLOTS.length - 0.5,
-                        y0: 70, y1: 70,
+                        y0: 75, y1: 75,
                         line: { color: '#FF4B4B', dash: 'dash', width: 1 }
                     },
                     {
                         type: 'line',
                         x0: -0.5, x1: TIME_SLOTS.length - 0.5,
-                        y0: 40, y1: 40,
+                        y0: 50, y1: 50,
                         line: { color: '#FFA500', dash: 'dash', width: 1 }
+                    },
+                    {
+                        type: 'line',
+                        x0: -0.5, x1: TIME_SLOTS.length - 0.5,
+                        y0: 25, y1: 25,
+                        line: { color: '#FFD700', dash: 'dash', width: 1 }
                     }
                 ]
             };
@@ -893,20 +947,36 @@
         }
         
         function renderTimeSlots() {
-            let html = '';
+            let html = '<p style="color: #666; margin-bottom: 12px;">⏰ 이미 지난 시간대는 선택할 수 없습니다.</p>';
+            
+            const now = new Date();
+            const currentHour = now.getHours();
+            const todayStr = now.toISOString().split('T')[0];
+            const selectedDateStr = document.getElementById('datePicker').value;
+            const isToday = selectedDateStr === todayStr;
             
             for (const hour of TIME_SLOTS) {
                 const prob = riskData[hour];
                 const risk = getRiskLevel(prob);
                 const selected = selectedTimeSlot === hour ? 'selected' : '';
+                const isPastTime = isToday && hour <= currentHour;
                 
-                html += `
-                    <div class="time-slot ${risk.class} ${selected}" onclick="selectTimeSlot(${hour})">
-                        <div class="time-slot-time">${hour}:00</div>
-                        <div class="time-slot-risk">${risk.emoji} ${risk.level}</div>
-                        <div style="font-size: 0.8rem; margin-top: 4px;">${prob.toFixed(0)}%</div>
-                    </div>
-                `;
+                if (isPastTime) {
+                    html += `
+                        <div class="time-slot slot-disabled" title="이미 지난 시간입니다">
+                            <div class="time-slot-time">${hour}:00</div>
+                            <div class="time-slot-risk">⛔ 불가</div>
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="time-slot ${risk.class} ${selected}" onclick="selectTimeSlot(${hour})">
+                            <div class="time-slot-time">${hour}:00</div>
+                            <div class="time-slot-risk">${risk.emoji} ${risk.level}</div>
+                            <div style="font-size: 0.8rem; margin-top: 4px;">${prob.toFixed(0)}%</div>
+                        </div>
+                    `;
+                }
             }
             
             document.getElementById('timeSlots').innerHTML = html;

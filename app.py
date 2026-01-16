@@ -187,10 +187,12 @@ def generate_training_data():
     return pd.DataFrame(data)
 
 def get_risk_level(probability):
-    if probability >= 70:
+    if probability >= 75:
         return "위험", "#FF4B4B", "🔴"
-    elif probability >= 40:
-        return "보통", "#FFA500", "🟠"
+    elif probability >= 50:
+        return "임박", "#FFA500", "🟠"
+    elif probability >= 25:
+        return "주의", "#FFD700", "🟡"
     else:
         return "여유", "#00CC66", "🟢"
 
@@ -264,14 +266,20 @@ def create_time_slot_chart(time_data, selected_slot=None):
     fig.add_shape(
         type="line",
         x0=-0.5, x1=len(TIME_SLOTS)-0.5,
-        y0=70, y1=70,
+        y0=75, y1=75,
         line=dict(color="#FF4B4B", dash="dash", width=1)
     )
     fig.add_shape(
         type="line",
         x0=-0.5, x1=len(TIME_SLOTS)-0.5,
-        y0=40, y1=40,
+        y0=50, y1=50,
         line=dict(color="#FFA500", dash="dash", width=1)
+    )
+    fig.add_shape(
+        type="line",
+        x0=-0.5, x1=len(TIME_SLOTS)-0.5,
+        y0=25, y1=25,
+        line=dict(color="#FFD700", dash="dash", width=1)
     )
     
     return fig
@@ -280,9 +288,12 @@ st.title("🎵 연습실 예약 마감 위험도 예측 (2026)")
 st.markdown("""
 이 서비스는 **머신러닝(RandomForest) 기반 예약 마감 확률**을 제공하여 사용자가 더 합리적으로 예약 결정을 내릴 수 있도록 돕습니다.
 
-- **위험 (70% 이상)**: 마감 가능성이 높아 빠른 예약을 권장합니다.
-- **보통 (40~70%)**: 적당한 시간 내 예약을 권장합니다.
-- **여유 (40% 미만)**: 여유롭게 예약해도 괜찮습니다.
+| 단계 | 위험도 | 마감 확률 | 의미 |
+|:---:|:---:|:---:|:---|
+| 🟢 | **여유** | 0~25% | 지금 예약하지 않아도 충분히 여유 있음 |
+| 🟡 | **주의** | 25~50% | 조금씩 찰 가능성 있음 |
+| 🟠 | **임박** | 50~75% | 예약 지연 시 확보 어려움 |
+| 🔴 | **위험** | 75~100% | 빠른 예약 필요 |
 """)
 
 st.divider()
@@ -342,11 +353,15 @@ if 'predictor' not in st.session_state:
 else:
     col_date1, col_date2 = st.columns([1, 2])
     
+    today = datetime.now().date()
+    min_date = max(today, datetime(2026, 1, 1).date())
+    
     with col_date1:
+        default_date = max(min_date, datetime(2026, 3, 15).date())
         selected_date = st.date_input(
             "예약 희망 날짜를 선택하세요",
-            value=datetime(2026, 3, 15),
-            min_value=datetime(2026, 1, 1),
+            value=default_date,
+            min_value=min_date,
             max_value=datetime(2026, 12, 31),
             format="YYYY-MM-DD"
         )
@@ -400,29 +415,45 @@ else:
     st.plotly_chart(chart, use_container_width=True)
     
     st.markdown("##### 시간대 선택")
+    st.caption("⏰ 이미 지난 시간대는 선택할 수 없습니다.")
+    
+    now = datetime.now()
+    current_hour = now.hour
+    is_today = selected_date == now.date()
     
     cols = st.columns(7)
     for idx, hour in enumerate(TIME_SLOTS):
         col_idx = idx % 7
         with cols[col_idx]:
             risk_info = time_data[hour]
+            is_past_time = is_today and hour <= current_hour
             
-            if st.button(
-                f"{hour}:00\n{risk_info['emoji']}",
-                key=f"time_{hour}",
-                use_container_width=True
-            ):
-                st.session_state['selected_time'] = hour
-                st.rerun()
+            if is_past_time:
+                st.button(
+                    f"{hour}:00\n⛔",
+                    key=f"time_{hour}",
+                    use_container_width=True,
+                    disabled=True
+                )
+            else:
+                if st.button(
+                    f"{hour}:00\n{risk_info['emoji']}",
+                    key=f"time_{hour}",
+                    use_container_width=True
+                ):
+                    st.session_state['selected_time'] = hour
+                    st.rerun()
     
     st.markdown("---")
-    col_legend1, col_legend2, col_legend3 = st.columns(3)
+    col_legend1, col_legend2, col_legend3, col_legend4 = st.columns(4)
     with col_legend1:
-        st.markdown("🟢 **여유** (40% 미만)")
+        st.markdown("🟢 **여유** (0~25%)")
     with col_legend2:
-        st.markdown("🟠 **보통** (40~70%)")
+        st.markdown("🟡 **주의** (25~50%)")
     with col_legend3:
-        st.markdown("🔴 **위험** (70% 이상)")
+        st.markdown("🟠 **임박** (50~75%)")
+    with col_legend4:
+        st.markdown("🔴 **위험** (75~100%)")
     
     if 'selected_time' in st.session_state and st.session_state['selected_time'] is not None:
         st.divider()
@@ -465,11 +496,13 @@ else:
             """, unsafe_allow_html=True)
             
             if sel_info['risk_level'] == "위험":
-                st.warning("⚠️ 이 시간대는 마감 가능성이 높습니다. 빠른 예약을 권장합니다!")
-            elif sel_info['risk_level'] == "보통":
-                st.info("ℹ️ 이 시간대는 보통 수준의 수요가 있습니다. 적당한 시간 내 예약을 권장합니다.")
+                st.error("🔴 이 시간대는 마감 가능성이 매우 높습니다. 빠른 예약이 필요합니다!")
+            elif sel_info['risk_level'] == "임박":
+                st.warning("🟠 예약 지연 시 확보가 어려울 수 있습니다. 빠른 결정을 권장합니다.")
+            elif sel_info['risk_level'] == "주의":
+                st.info("🟡 조금씩 찰 가능성이 있습니다. 여유를 두고 예약하세요.")
             else:
-                st.success("✅ 이 시간대는 여유가 있습니다. 천천히 예약해도 괜찮습니다.")
+                st.success("🟢 이 시간대는 충분히 여유가 있습니다. 천천히 예약해도 괜찮습니다.")
         
         with info_col2:
             st.markdown("""
