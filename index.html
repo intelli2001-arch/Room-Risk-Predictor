@@ -714,10 +714,19 @@
             return weights;
         }
         
+        function calculateLeadTime(dateStr, hour) {
+            const now = new Date();
+            const targetDate = new Date(dateStr);
+            targetDate.setHours(hour, 0, 0, 0);
+            const leadTimeHours = (targetDate - now) / (1000 * 60 * 60);
+            return Math.max(0, leadTimeHours);
+        }
+        
         function predictWithModel(dateStr, hour, weights) {
             const date = new Date(dateStr);
             const weekday = date.getDay();
             const periodInfo = getPeriodInfo(dateStr);
+            const leadTime = calculateLeadTime(dateStr, hour);
             
             let prob = weights.baseProb;
             
@@ -729,10 +738,20 @@
             else if (hour >= 14 && hour <= 17) prob += weights.afternoonEffect;
             else if (hour >= 9 && hour <= 11) prob += weights.morningEffect;
             
-            const noise = (Math.random() - 0.5) * 0.1;
+            let timeFactor = 1.0;
+            if (leadTime < 6) timeFactor = 0.85;
+            else if (leadTime < 24) timeFactor = 0.70;
+            else if (leadTime < 72) timeFactor = 0.55;
+            else if (leadTime < 168) timeFactor = 0.40;
+            else if (leadTime < 336) timeFactor = 0.25;
+            else timeFactor = 0.15;
+            
+            prob = prob * timeFactor;
+            
+            const noise = (Math.random() - 0.5) * 0.05;
             prob = Math.max(0.05, Math.min(0.95, prob + noise));
             
-            return prob * 100;
+            return { probability: prob * 100, leadTime: leadTime };
         }
         
         function initializeModel() {
@@ -870,8 +889,8 @@
             riskData = {};
             
             for (const hour of TIME_SLOTS) {
-                const probability = predictWithModel(dateStr, hour, modelWeights);
-                riskData[hour] = probability;
+                const result = predictWithModel(dateStr, hour, modelWeights);
+                riskData[hour] = { probability: result.probability, leadTime: result.leadTime };
             }
             
             renderChart();
@@ -897,8 +916,8 @@
         
         function renderChart() {
             const hours = TIME_SLOTS.map(h => `${h}:00`);
-            const probabilities = TIME_SLOTS.map(h => riskData[h]);
-            const colors = TIME_SLOTS.map(h => getRiskLevel(riskData[h]).color);
+            const probabilities = TIME_SLOTS.map(h => riskData[h].probability);
+            const colors = TIME_SLOTS.map(h => getRiskLevel(riskData[h].probability).color);
             
             const trace = {
                 x: hours,
@@ -956,7 +975,8 @@
             const isToday = selectedDateStr === todayStr;
             
             for (const hour of TIME_SLOTS) {
-                const prob = riskData[hour];
+                const data = riskData[hour];
+                const prob = data.probability;
                 const risk = getRiskLevel(prob);
                 const selected = selectedTimeSlot === hour ? 'selected' : '';
                 const isPastTime = isToday && hour <= currentHour;
@@ -988,6 +1008,16 @@
             updateBookingSection();
         }
         
+        function formatLeadTime(hours) {
+            if (hours < 24) {
+                return `${hours.toFixed(1)}시간 전`;
+            } else if (hours < 168) {
+                return `${(hours / 24).toFixed(1)}일 전`;
+            } else {
+                return `${(hours / 168).toFixed(1)}주 전`;
+            }
+        }
+        
         function updateBookingSection() {
             if (!selectedTimeSlot) {
                 document.getElementById('bookingWarning').classList.remove('hidden');
@@ -998,7 +1028,9 @@
             document.getElementById('bookingWarning').classList.add('hidden');
             document.getElementById('bookingSummary').classList.remove('hidden');
             
-            const prob = riskData[selectedTimeSlot];
+            const data = riskData[selectedTimeSlot];
+            const prob = data.probability;
+            const leadTime = data.leadTime;
             const risk = getRiskLevel(prob);
             const weekday = selectedDate.getDay();
             
@@ -1022,6 +1054,10 @@
                     <strong>${periodText}</strong>
                 </div>
                 <div class="booking-row">
+                    <span>예약 시점</span>
+                    <strong>🕐 ${formatLeadTime(leadTime)} (리드타임: ${leadTime.toFixed(0)}시간)</strong>
+                </div>
+                <div class="booking-row">
                     <span>마감 위험도</span>
                     <strong style="color: ${risk.color}">${risk.emoji} ${risk.level} (${prob.toFixed(0)}%)</strong>
                 </div>
@@ -1031,7 +1067,9 @@
         }
         
         function processBooking() {
-            const prob = riskData[selectedTimeSlot];
+            const data = riskData[selectedTimeSlot];
+            const prob = data.probability;
+            const leadTime = data.leadTime;
             const risk = getRiskLevel(prob);
             const weekday = selectedDate.getDay();
             
@@ -1050,6 +1088,10 @@
                     <div class="booking-row">
                         <span>예약 시간</span>
                         <strong>${selectedTimeSlot}:00 ~ ${selectedTimeSlot + 1}:00</strong>
+                    </div>
+                    <div class="booking-row">
+                        <span>예약 시점</span>
+                        <strong>🕐 ${formatLeadTime(leadTime)}</strong>
                     </div>
                     <div class="booking-row">
                         <span>기간 특성</span>

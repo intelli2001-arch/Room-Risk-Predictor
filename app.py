@@ -45,7 +45,7 @@ PERFORMANCE_SEASONS_2026 = [
 class PracticeRoomPredictor:
     def __init__(self, df):
         self.df = df
-        self.features = ['월', '일', '요일', '시간', '휴일 여부', '시험기간 여부', '공연시즌 여부']
+        self.features = ['월', '일', '요일', '시간', '휴일 여부', '시험기간 여부', '공연시즌 여부', '리드타임_시간']
         self.model = self._train_model()
     
     def _train_model(self):
@@ -53,6 +53,8 @@ class PracticeRoomPredictor:
             self.df['시험기간 여부'] = 0
         if '공연시즌 여부' not in self.df.columns:
             self.df['공연시즌 여부'] = 0
+        if '리드타임_시간' not in self.df.columns:
+            self.df['리드타임_시간'] = 72
         
         X = self.df[self.features]
         y = self.df['예약 여부']
@@ -68,13 +70,28 @@ class PracticeRoomPredictor:
                 return 1
         return 0
     
-    def predict(self, date_obj, hour):
+    def calculate_lead_time(self, date_obj, hour):
+        """현재 시점부터 예약 시간까지의 리드타임(시간) 계산"""
+        now = datetime.now()
+        if isinstance(date_obj, str):
+            target_date = datetime.strptime(date_obj, '%Y-%m-%d').date()
+        else:
+            target_date = date_obj
+        
+        target_datetime = datetime.combine(target_date, datetime.min.time().replace(hour=hour))
+        lead_time_hours = (target_datetime - now).total_seconds() / 3600
+        return max(0, lead_time_hours)
+    
+    def predict(self, date_obj, hour, lead_time_hours=None):
         if isinstance(date_obj, str):
             target_dt = datetime.strptime(date_obj, '%Y-%m-%d')
             target_date = target_dt.date()
         else:
             target_date = date_obj
             target_dt = datetime.combine(date_obj, datetime.min.time())
+        
+        if lead_time_hours is None:
+            lead_time_hours = self.calculate_lead_time(target_date, hour)
         
         month = target_date.month
         day = target_date.day
@@ -86,12 +103,12 @@ class PracticeRoomPredictor:
         is_perf = self._is_in_period(target_date, PERFORMANCE_SEASONS_2026)
         
         input_data = pd.DataFrame([[
-            month, day, weekday, hour, is_holiday, is_exam, is_perf
+            month, day, weekday, hour, is_holiday, is_exam, is_perf, lead_time_hours
         ]], columns=self.features)
         
         prob = self.model.predict_proba(input_data)[0][1]
         
-        return prob * 100
+        return prob * 100, lead_time_hours
 
 def load_real_data():
     csv_path = "attached_assets/practice_room_ML_data_2025_1768532371118.csv"
@@ -163,24 +180,49 @@ def generate_training_data():
             elif 9 <= hour <= 11:
                 base_prob += 0.05
             
-            is_booked = 1 if np.random.random() < base_prob else 0
+            lead_time_ranges = [
+                (0, 6),      # 당일 예약 (0~6시간 전)
+                (6, 24),     # 하루 전 예약
+                (24, 72),    # 1~3일 전 예약
+                (72, 168),   # 3~7일 전 예약
+                (168, 336),  # 1~2주 전 예약
+                (336, 720),  # 2주~1달 전 예약
+            ]
             
-            lead_time = np.random.uniform(2, 300) if is_booked else 0.0
-            is_cancelled = 1 if is_booked and np.random.random() < 0.05 else 0
-            
-            data.append({
-                '연도': current_date.year,
-                '월': current_date.month,
-                '일': current_date.day,
-                '요일': weekday,
-                '시간': hour,
-                '휴일 여부': is_holiday,
-                '시험기간 여부': is_exam,
-                '공연시즌 여부': is_perf,
-                '예약 여부': is_booked,
-                '리드타임_시간': round(lead_time, 1),
-                '취소 여부': is_cancelled
-            })
+            for lead_min, lead_max in lead_time_ranges:
+                lead_time = np.random.uniform(lead_min, lead_max)
+                
+                time_factor = 1.0
+                if lead_time < 6:
+                    time_factor = 0.85
+                elif lead_time < 24:
+                    time_factor = 0.70
+                elif lead_time < 72:
+                    time_factor = 0.55
+                elif lead_time < 168:
+                    time_factor = 0.40
+                elif lead_time < 336:
+                    time_factor = 0.25
+                else:
+                    time_factor = 0.15
+                
+                adjusted_prob = base_prob * time_factor
+                is_booked = 1 if np.random.random() < adjusted_prob else 0
+                is_cancelled = 1 if is_booked and np.random.random() < 0.05 else 0
+                
+                data.append({
+                    '연도': current_date.year,
+                    '월': current_date.month,
+                    '일': current_date.day,
+                    '요일': weekday,
+                    '시간': hour,
+                    '휴일 여부': is_holiday,
+                    '시험기간 여부': is_exam,
+                    '공연시즌 여부': is_perf,
+                    '예약 여부': is_booked,
+                    '리드타임_시간': round(lead_time, 1),
+                    '취소 여부': is_cancelled
+                })
         
         current_date += timedelta(days=1)
     
@@ -396,14 +438,17 @@ else:
     
     st.subheader("3. 시간대별 예약 마감 위험도 (ML 예측)")
     
+    st.caption("📊 **리드타임 기반 예측**: 현재 시점 기준으로 예약이 마감될 확률을 예측합니다.")
+    
     predictor = st.session_state['predictor']
     time_data = {}
     
     for hour in TIME_SLOTS:
-        prob = predictor.predict(selected_date, hour)
+        prob, lead_time = predictor.predict(selected_date, hour)
         risk_level, color, emoji = get_risk_level(prob)
         time_data[hour] = {
             'probability': prob,
+            'lead_time': lead_time,
             'risk_level': risk_level,
             'color': color,
             'emoji': emoji
@@ -476,6 +521,14 @@ else:
                 period_text_short.append("공연시즌")
             period_str = ", ".join(period_text_short) if period_text_short else "평일"
             
+            lead_time = sel_info['lead_time']
+            if lead_time < 24:
+                lead_time_str = f"{lead_time:.1f}시간 전"
+            elif lead_time < 168:
+                lead_time_str = f"{lead_time/24:.1f}일 전"
+            else:
+                lead_time_str = f"{lead_time/168:.1f}주 전"
+            
             st.markdown(f"""
             <div style="
                 background: linear-gradient(135deg, {risk_color}22, {risk_color}44);
@@ -489,6 +542,7 @@ else:
                     <strong>날짜:</strong> {selected_date.strftime('%Y년 %m월 %d일')} ({weekday_name})<br>
                     <strong>시간:</strong> {sel_hour}:00 ~ {sel_hour+1}:00 (1시간)<br>
                     <strong>기간 특성:</strong> {period_str}<br>
+                    <strong>예약 시점:</strong> 🕐 {lead_time_str} (리드타임: {lead_time:.0f}시간)<br>
                     <strong>마감 확률:</strong> <span style="font-size: 24px; font-weight: bold; color: {risk_color};">{sel_info['probability']:.1f}%</span><br>
                     <strong>위험도:</strong> {sel_info['emoji']} {sel_info['risk_level']}
                 </p>
