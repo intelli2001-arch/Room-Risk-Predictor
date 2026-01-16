@@ -648,7 +648,7 @@
                     let baseProb = 0.25;
                     
                     if (isHoliday) baseProb += 0.20;
-                    if (isExam) baseProb += 0.25;
+                    if (isExam) baseProb -= 0.15;  // 시험기간에는 연습 수요 감소
                     if (isPerf) baseProb += 0.15;
                     
                     if (hour >= 18 && hour <= 21) baseProb += 0.30;
@@ -875,7 +875,7 @@
             
             let alertsHtml = '';
             if (currentPeriodInfo.isExam) {
-                alertsHtml += '<div class="alert alert-exam">📚 시험기간에는 예약 수요가 높습니다!</div>';
+                alertsHtml += '<div class="alert alert-exam">📚 시험기간에는 예약 수요가 낮습니다. 여유롭게 예약 가능합니다.</div>';
             }
             if (currentPeriodInfo.isPerf) {
                 alertsHtml += '<div class="alert alert-perf">🎭 공연시즌에는 연습실 수요가 증가합니다.</div>';
