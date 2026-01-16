@@ -533,7 +533,7 @@
                 <h3 style="margin-bottom: 16px;">예약 정보 확인 (ML 예측)</h3>
                 <div id="bookingDetails"></div>
                 <div style="margin-top: 20px; text-align: center;">
-                    <button class="btn btn-book" onclick="processBooking()">예약하기</button>
+                    <button id="bookingBtn" class="btn btn-book" onclick="processBooking()">🎯 예약하기</button>
                 </div>
             </div>
         </div>
@@ -574,7 +574,7 @@
         let trainingData = null;
         let modelWeights = null;
         let selectedDate = null;
-        let selectedTimeSlot = null;
+        let selectedTimeSlots = [];
         let riskData = {};
         let currentPeriodInfo = {};
         
@@ -966,7 +966,7 @@
         }
         
         function renderTimeSlots() {
-            let html = '<p style="color: #666; margin-bottom: 12px;">⏰ 이미 지난 시간대는 선택할 수 없습니다.</p>';
+            let html = '<p style="color: #666; margin-bottom: 12px;">⏰ 이미 지난 시간대는 선택할 수 없습니다. 클릭하여 복수 선택/해제 가능합니다.</p>';
             
             const now = new Date();
             const currentHour = now.getHours();
@@ -978,7 +978,8 @@
                 const data = riskData[hour];
                 const prob = data.probability;
                 const risk = getRiskLevel(prob);
-                const selected = selectedTimeSlot === hour ? 'selected' : '';
+                const isSelected = selectedTimeSlots.includes(hour);
+                const selected = isSelected ? 'selected' : '';
                 const isPastTime = isToday && hour <= currentHour;
                 
                 if (isPastTime) {
@@ -990,8 +991,8 @@
                     `;
                 } else {
                     html += `
-                        <div class="time-slot ${risk.class} ${selected}" onclick="selectTimeSlot(${hour})">
-                            <div class="time-slot-time">${hour}:00</div>
+                        <div class="time-slot ${risk.class} ${selected}" onclick="toggleTimeSlot(${hour})">
+                            <div class="time-slot-time">${isSelected ? '✅ ' : ''}${hour}:00</div>
                             <div class="time-slot-risk">${risk.emoji} ${risk.level}</div>
                             <div style="font-size: 0.8rem; margin-top: 4px;">${prob.toFixed(0)}%</div>
                         </div>
@@ -1002,8 +1003,20 @@
             document.getElementById('timeSlots').innerHTML = html;
         }
         
-        function selectTimeSlot(hour) {
-            selectedTimeSlot = hour;
+        function toggleTimeSlot(hour) {
+            const index = selectedTimeSlots.indexOf(hour);
+            if (index > -1) {
+                selectedTimeSlots.splice(index, 1);
+            } else {
+                selectedTimeSlots.push(hour);
+                selectedTimeSlots.sort((a, b) => a - b);
+            }
+            renderTimeSlots();
+            updateBookingSection();
+        }
+        
+        function clearSelection() {
+            selectedTimeSlots = [];
             renderTimeSlots();
             updateBookingSection();
         }
@@ -1019,7 +1032,7 @@
         }
         
         function updateBookingSection() {
-            if (!selectedTimeSlot) {
+            if (selectedTimeSlots.length === 0) {
                 document.getElementById('bookingWarning').classList.remove('hidden');
                 document.getElementById('bookingSummary').classList.add('hidden');
                 return;
@@ -1028,10 +1041,20 @@
             document.getElementById('bookingWarning').classList.add('hidden');
             document.getElementById('bookingSummary').classList.remove('hidden');
             
-            const data = riskData[selectedTimeSlot];
-            const prob = data.probability;
-            const leadTime = data.leadTime;
-            const risk = getRiskLevel(prob);
+            const totalHours = selectedTimeSlots.length;
+            const hourlyRate = 110000;
+            const totalPrice = hourlyRate * totalHours;
+            
+            const timeRanges = selectedTimeSlots.map(h => `${h}:00~${h+1}:00`).join(', ');
+            
+            const avgProb = selectedTimeSlots.reduce((sum, h) => sum + riskData[h].probability, 0) / totalHours;
+            const maxRiskHour = selectedTimeSlots.reduce((max, h) => 
+                riskData[h].probability > riskData[max].probability ? h : max, selectedTimeSlots[0]);
+            const maxRiskInfo = riskData[maxRiskHour];
+            const maxRisk = getRiskLevel(maxRiskInfo.probability);
+            
+            const firstHour = selectedTimeSlots[0];
+            const leadTime = riskData[firstHour].leadTime;
             const weekday = selectedDate.getDay();
             
             let periodStr = [];
@@ -1040,6 +1063,12 @@
             if (currentPeriodInfo.isPerf) periodStr.push('공연시즌');
             const periodText = periodStr.length > 0 ? periodStr.join(', ') : '평일';
             
+            let slotDetails = selectedTimeSlots.map(h => {
+                const info = riskData[h];
+                const risk = getRiskLevel(info.probability);
+                return `<div style="font-size: 0.9rem; margin: 2px 0;">${risk.emoji} ${h}:00~${h+1}:00 (${info.probability.toFixed(0)}%)</div>`;
+            }).join('');
+            
             const bookingHtml = `
                 <div class="booking-row">
                     <span>예약 날짜</span>
@@ -1047,7 +1076,7 @@
                 </div>
                 <div class="booking-row">
                     <span>예약 시간</span>
-                    <strong>${selectedTimeSlot}:00 ~ ${selectedTimeSlot + 1}:00</strong>
+                    <strong>${timeRanges} (${totalHours}시간)</strong>
                 </div>
                 <div class="booking-row">
                     <span>기간 특성</span>
@@ -1058,19 +1087,36 @@
                     <strong>🕐 ${formatLeadTime(leadTime)} (리드타임: ${leadTime.toFixed(0)}시간)</strong>
                 </div>
                 <div class="booking-row">
-                    <span>마감 위험도</span>
-                    <strong style="color: ${risk.color}">${risk.emoji} ${risk.level} (${prob.toFixed(0)}%)</strong>
+                    <span>평균 마감 확률</span>
+                    <strong style="color: ${maxRisk.color}">${avgProb.toFixed(0)}%</strong>
+                </div>
+                <div class="booking-row">
+                    <span>선택된 시간대</span>
+                    <div>${slotDetails}</div>
+                </div>
+                <div class="booking-row">
+                    <span>예상 이용료</span>
+                    <strong style="color: #7B68EE;">₩${totalPrice.toLocaleString()} (${totalHours}시간)</strong>
+                </div>
+                <div style="margin-top: 10px;">
+                    <button onclick="clearSelection()" style="background: #f0f0f0; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer;">선택 초기화</button>
                 </div>
             `;
             
             document.getElementById('bookingDetails').innerHTML = bookingHtml;
+            document.getElementById('bookingBtn').textContent = `🎯 ${totalHours}시간 예약하기`;
         }
         
         function processBooking() {
-            const data = riskData[selectedTimeSlot];
-            const prob = data.probability;
-            const leadTime = data.leadTime;
-            const risk = getRiskLevel(prob);
+            if (selectedTimeSlots.length === 0) return;
+            
+            const totalHours = selectedTimeSlots.length;
+            const hourlyRate = 110000;
+            const totalPrice = hourlyRate * totalHours;
+            const timeRanges = selectedTimeSlots.map(h => `${h}:00~${h+1}:00`).join(', ');
+            
+            const firstHour = selectedTimeSlots[0];
+            const leadTime = riskData[firstHour].leadTime;
             const weekday = selectedDate.getDay();
             
             let periodStr = [];
@@ -1087,7 +1133,7 @@
                     </div>
                     <div class="booking-row">
                         <span>예약 시간</span>
-                        <strong>${selectedTimeSlot}:00 ~ ${selectedTimeSlot + 1}:00</strong>
+                        <strong>${timeRanges} (${totalHours}시간)</strong>
                     </div>
                     <div class="booking-row">
                         <span>예약 시점</span>
@@ -1098,8 +1144,8 @@
                         <strong>${periodText}</strong>
                     </div>
                     <div class="booking-row">
-                        <span>마감 위험도</span>
-                        <strong style="color: ${risk.color}">${risk.emoji} ${risk.level}</strong>
+                        <span>결제 금액</span>
+                        <strong style="color: #7B68EE; font-size: 1.2rem;">₩${totalPrice.toLocaleString()}</strong>
                     </div>
                 </div>
             `;

@@ -454,13 +454,16 @@ else:
             'emoji': emoji
         }
     
-    selected_time = st.session_state.get('selected_time', None)
+    if 'selected_times' not in st.session_state:
+        st.session_state['selected_times'] = []
     
-    chart = create_time_slot_chart(time_data, selected_time)
+    selected_times = st.session_state.get('selected_times', [])
+    
+    chart = create_time_slot_chart(time_data, selected_times[0] if selected_times else None)
     st.plotly_chart(chart, use_container_width=True)
     
-    st.markdown("##### 시간대 선택")
-    st.caption("⏰ 이미 지난 시간대는 선택할 수 없습니다.")
+    st.markdown("##### 시간대 선택 (복수 선택 가능)")
+    st.caption("⏰ 이미 지난 시간대는 선택할 수 없습니다. 클릭하여 선택/해제하세요.")
     
     now = datetime.now()
     current_hour = now.hour
@@ -472,6 +475,7 @@ else:
         with cols[col_idx]:
             risk_info = time_data[hour]
             is_past_time = is_today and hour <= current_hour
+            is_selected = hour in selected_times
             
             if is_past_time:
                 st.button(
@@ -481,12 +485,18 @@ else:
                     disabled=True
                 )
             else:
+                button_label = f"{'✅ ' if is_selected else ''}{hour}:00\n{risk_info['emoji']}"
                 if st.button(
-                    f"{hour}:00\n{risk_info['emoji']}",
+                    button_label,
                     key=f"time_{hour}",
-                    use_container_width=True
+                    use_container_width=True,
+                    type="primary" if is_selected else "secondary"
                 ):
-                    st.session_state['selected_time'] = hour
+                    if hour in st.session_state['selected_times']:
+                        st.session_state['selected_times'].remove(hour)
+                    else:
+                        st.session_state['selected_times'].append(hour)
+                        st.session_state['selected_times'].sort()
                     st.rerun()
     
     st.markdown("---")
@@ -500,39 +510,49 @@ else:
     with col_legend4:
         st.markdown("🔴 **위험** (75~100%)")
     
-    if 'selected_time' in st.session_state and st.session_state['selected_time'] is not None:
+    if selected_times:
         st.divider()
         
-        st.subheader("4. 선택한 시간대 상세 정보")
+        st.subheader(f"4. 선택한 시간대 상세 정보 ({len(selected_times)}개 선택)")
         
-        sel_hour = st.session_state['selected_time']
-        sel_info = time_data[sel_hour]
+        period_text_short = []
+        if period_info['is_holiday']:
+            period_text_short.append("휴일")
+        if period_info['is_exam']:
+            period_text_short.append("시험기간")
+        if period_info['is_perf']:
+            period_text_short.append("공연시즌")
+        period_str = ", ".join(period_text_short) if period_text_short else "평일"
+        
+        hourly_rate = 110000
+        total_hours = len(selected_times)
+        total_price = hourly_rate * total_hours
+        
+        time_ranges = []
+        for h in selected_times:
+            time_ranges.append(f"{h}:00~{h+1}:00")
+        time_str = ", ".join(time_ranges)
+        
+        avg_prob = sum(time_data[h]['probability'] for h in selected_times) / len(selected_times)
+        max_risk_hour = max(selected_times, key=lambda h: time_data[h]['probability'])
+        max_risk_info = time_data[max_risk_hour]
+        
+        first_hour = selected_times[0]
+        lead_time = time_data[first_hour]['lead_time']
+        if lead_time < 24:
+            lead_time_str = f"{lead_time:.1f}시간 전"
+        elif lead_time < 168:
+            lead_time_str = f"{lead_time/24:.1f}일 전"
+        else:
+            lead_time_str = f"{lead_time/168:.1f}주 전"
         
         info_col1, info_col2 = st.columns([2, 1])
         
         with info_col1:
-            risk_color = sel_info['color']
-            period_text_short = []
-            if period_info['is_holiday']:
-                period_text_short.append("휴일")
-            if period_info['is_exam']:
-                period_text_short.append("시험기간")
-            if period_info['is_perf']:
-                period_text_short.append("공연시즌")
-            period_str = ", ".join(period_text_short) if period_text_short else "평일"
-            
-            lead_time = sel_info['lead_time']
-            if lead_time < 24:
-                lead_time_str = f"{lead_time:.1f}시간 전"
-            elif lead_time < 168:
-                lead_time_str = f"{lead_time/24:.1f}일 전"
-            else:
-                lead_time_str = f"{lead_time/168:.1f}주 전"
-            
             st.markdown(f"""
             <div style="
-                background: linear-gradient(135deg, {risk_color}22, {risk_color}44);
-                border-left: 5px solid {risk_color};
+                background: linear-gradient(135deg, {max_risk_info['color']}22, {max_risk_info['color']}44);
+                border-left: 5px solid {max_risk_info['color']};
                 padding: 20px;
                 border-radius: 10px;
                 margin: 10px 0;
@@ -540,29 +560,23 @@ else:
                 <h3 style="margin: 0; color: #333;">📍 예약 정보 (ML 예측)</h3>
                 <p style="font-size: 16px; margin-top: 10px;">
                     <strong>날짜:</strong> {selected_date.strftime('%Y년 %m월 %d일')} ({weekday_name})<br>
-                    <strong>시간:</strong> {sel_hour}:00 ~ {sel_hour+1}:00 (1시간)<br>
+                    <strong>시간:</strong> {time_str} ({total_hours}시간)<br>
                     <strong>기간 특성:</strong> {period_str}<br>
                     <strong>예약 시점:</strong> 🕐 {lead_time_str} (리드타임: {lead_time:.0f}시간)<br>
-                    <strong>마감 확률:</strong> <span style="font-size: 24px; font-weight: bold; color: {risk_color};">{sel_info['probability']:.1f}%</span><br>
-                    <strong>위험도:</strong> {sel_info['emoji']} {sel_info['risk_level']}
+                    <strong>평균 마감 확률:</strong> <span style="font-size: 24px; font-weight: bold; color: {max_risk_info['color']};">{avg_prob:.1f}%</span><br>
+                    <strong>가장 높은 위험:</strong> {max_risk_info['emoji']} {max_risk_hour}:00 ({max_risk_info['probability']:.1f}%)
                 </p>
             </div>
             """, unsafe_allow_html=True)
             
-            if sel_info['risk_level'] == "위험":
-                st.error("🔴 이 시간대는 마감 가능성이 매우 높습니다. 빠른 예약이 필요합니다!")
-            elif sel_info['risk_level'] == "임박":
-                st.warning("🟠 예약 지연 시 확보가 어려울 수 있습니다. 빠른 결정을 권장합니다.")
-            elif sel_info['risk_level'] == "주의":
-                st.info("🟡 조금씩 찰 가능성이 있습니다. 여유를 두고 예약하세요.")
-            else:
-                st.success("🟢 이 시간대는 충분히 여유가 있습니다. 천천히 예약해도 괜찮습니다.")
+            for sel_hour in selected_times:
+                sel_info = time_data[sel_hour]
+                st.markdown(f"- **{sel_hour}:00~{sel_hour+1}:00**: {sel_info['emoji']} {sel_info['risk_level']} ({sel_info['probability']:.1f}%)")
         
         with info_col2:
             st.markdown("""
             **예상 이용료**
             """)
-            hourly_rate = 110000
             st.markdown(f"""
             <div style="
                 background: #f8f9fa;
@@ -570,10 +584,15 @@ else:
                 border-radius: 10px;
                 text-align: center;
             ">
-                <p style="margin: 0; color: #666;">1시간 기준</p>
-                <h2 style="margin: 10px 0; color: #7B68EE;">₩{hourly_rate:,}</h2>
+                <p style="margin: 0; color: #666;">{total_hours}시간 기준</p>
+                <h2 style="margin: 10px 0; color: #7B68EE;">₩{total_price:,}</h2>
+                <p style="margin: 0; font-size: 12px; color: #999;">시간당 ₩{hourly_rate:,}</p>
             </div>
             """, unsafe_allow_html=True)
+            
+            if st.button("선택 초기화", use_container_width=True):
+                st.session_state['selected_times'] = []
+                st.rerun()
         
         st.divider()
         
@@ -583,7 +602,7 @@ else:
         
         with reserve_col2:
             if st.button(
-                "🎯 예약하기",
+                f"🎯 {total_hours}시간 예약하기",
                 type="primary",
                 use_container_width=True
             ):
@@ -606,16 +625,16 @@ else:
                 </p>
                 <hr style="border-color: rgba(255,255,255,0.3); margin: 20px 0;">
                 <p style="margin: 0;">
-                    <strong>예약 정보:</strong> {date} ({weekday}) {time}:00~{time_end}:00<br>
+                    <strong>예약 정보:</strong> {date} ({weekday})<br>
+                    <strong>시간:</strong> {time_str}<br>
                     <strong>결제 금액:</strong> ₩{price:,}
                 </p>
             </div>
             """.format(
                 date=selected_date.strftime('%Y.%m.%d'),
                 weekday=weekday_name,
-                time=sel_hour,
-                time_end=sel_hour+1,
-                price=hourly_rate
+                time_str=time_str,
+                price=total_price
             ), unsafe_allow_html=True)
             
             if st.button("닫기", use_container_width=True):
