@@ -1,0 +1,67 @@
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from datetime import datetime
+
+class PracticeRoomPredictor:
+    def __init__(self, csv_path):
+        # 1. 데이터 로드 및 모델 학습
+        self.df = pd.read_csv(csv_path)
+        self.features = ['월', '일', '요일', '시간', '휴일 여부', '시험기간 여부', '공연시즌 여부']
+        self.model = self._train_model()
+        
+        # 2. 2026년 기준 주요 일정 설정 (자동 판단용)
+        self.holidays_2026 = [
+            '2026-01-01', '2026-03-01', '2026-03-02', '2026-05-05', 
+            '2026-05-24', '2026-06-06', '2026-08-15', '2026-10-03', '2026-10-09', '2026-12-25'
+        ]
+        self.exam_periods_2026 = [('2026-04-13', '2026-04-24'), ('2026-06-08', '2026-06-19')]
+        self.perf_seasons_2026 = [('2026-05-11', '2026-06-05')]
+
+    def _train_model(self):
+        X = self.df[self.features]
+        y = self.df['예약 여부']
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X, y)
+        return model
+
+    def _is_in_period(self, target_date, periods):
+        for start_str, end_str in periods:
+            start = datetime.strptime(start_str, '%Y-%m-%d').date()
+            end = datetime.strptime(end_str, '%Y-%m-%d').date()
+            if start <= target_date.date() <= end:
+                return 1
+        return 0
+
+    def predict(self, date_str, hour):
+        """날짜(YYYY-MM-DD)와 시간(9~22)을 입력받아 확률을 계산"""
+        target_dt = datetime.strptime(date_str, '%Y-%m-%d')
+        month, day, weekday = target_dt.month, target_dt.day, target_dt.weekday()
+        
+        # 시즌 및 휴일 자동 판단
+        is_holiday = 1 if (weekday >= 5 or date_str in self.holidays_2026) else 0
+        is_exam = self._is_in_period(target_dt, self.exam_periods_2026)
+        is_perf = self._is_in_period(target_dt, self.perf_seasons_2026)
+        
+        # 모델 입력 데이터 생성
+        input_data = pd.DataFrame([[
+            month, day, weekday, hour, is_holiday, is_exam, is_perf
+        ]], columns=self.features)
+        
+        # 확률 산출 (클래스 1: 마감될 확률)
+        prob = self.model.predict_proba(input_data)[0][1]
+        
+        # 가독성 있는 리포트 반환
+        status = "🔴 혼잡" if prob >= 0.7 else ("🟡 보통" if prob >= 0.4 else "🟢 여유")
+        return {
+            "분석_일시": f"{date_str} {hour:02d}:00",
+            "판단_결과": {"휴일": is_holiday, "시험기간": is_exam, "공연시즌": is_perf},
+            "마감_확률": f"{prob * 100:.1f}%",
+            "예측_상태": status
+        }
+
+# --- 엔진 실행 및 테스트 ---
+engine = PracticeRoomPredictor('/content/practice_room_ML_data_2025.csv')
+
+# 예시: 2026년 4월 20일(시험기간 월요일) 19시 예측
+result = engine.predict("2026-04-20", 19)
+print(result)
