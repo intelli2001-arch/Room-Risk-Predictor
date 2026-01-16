@@ -170,22 +170,27 @@ st.divider()
 
 st.subheader("1. 데이터 준비")
 
-col1, col2 = st.columns([1, 3])
+col1, col2, col3 = st.columns([1, 1, 2])
 
 with col1:
     if st.button("📊 더미 데이터 생성", type="primary", use_container_width=True):
         with st.spinner("데이터 생성 중..."):
-            real_data = load_real_data()
-            if real_data is not None:
-                st.session_state['booking_data'] = real_data
-                st.session_state['data_source'] = "실제 데이터"
-            else:
-                st.session_state['booking_data'] = generate_dummy_data()
-                st.session_state['data_source'] = "더미 데이터"
-        st.success("데이터가 생성되었습니다!")
+            st.session_state['booking_data'] = generate_dummy_data()
+            st.session_state['data_source'] = "더미 데이터"
+        st.success("더미 데이터가 생성되었습니다!")
         st.rerun()
 
 with col2:
+    real_data_available = os.path.exists("attached_assets/practice_room_ML_data_2025_1768532371118.csv")
+    if real_data_available:
+        if st.button("📁 실제 데이터 로드", use_container_width=True):
+            with st.spinner("데이터 로드 중..."):
+                st.session_state['booking_data'] = load_real_data()
+                st.session_state['data_source'] = "실제 데이터"
+            st.success("실제 데이터가 로드되었습니다!")
+            st.rerun()
+
+with col3:
     if 'booking_data' in st.session_state:
         st.info(f"✅ {st.session_state['data_source']}가 로드되었습니다. ({len(st.session_state['booking_data'])}개 레코드)")
 
