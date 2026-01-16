@@ -171,7 +171,7 @@ def generate_training_data():
                 base_prob -= 0.15  # 시험기간에는 연습 수요 감소
             
             if is_perf:
-                base_prob += 0.15
+                base_prob += 0.30  # 공연시즌에는 연습 수요 크게 증가
             
             if 18 <= hour <= 21:
                 base_prob += 0.30

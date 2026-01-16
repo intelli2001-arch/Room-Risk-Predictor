@@ -649,7 +649,7 @@
                     
                     if (isHoliday) baseProb += 0.20;
                     if (isExam) baseProb -= 0.15;  // 시험기간에는 연습 수요 감소
-                    if (isPerf) baseProb += 0.15;
+                    if (isPerf) baseProb += 0.30;  // 공연시즌에는 연습 수요 크게 증가
                     
                     if (hour >= 18 && hour <= 21) baseProb += 0.30;
                     else if (hour >= 14 && hour <= 17) baseProb += 0.15;
