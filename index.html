@@ -885,19 +885,60 @@
             calculateRisks(dateInput);
         }
         
+        let bookedSlots = new Set();
+        
+        function seededRandomForDate(seed) {
+            const x = Math.sin(seed) * 10000;
+            return x - Math.floor(x);
+        }
+        
         function calculateRisks(dateStr) {
             riskData = {};
+            bookedSlots = new Set();
             
+            // 날짜별 시드로 일관된 마감 시간대 생성
+            const date = new Date(dateStr);
+            const dateSeed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+            
+            // 먼저 예측값 계산
             for (const hour of TIME_SLOTS) {
                 const result = predictWithModel(dateStr, hour, modelWeights);
-                riskData[hour] = { probability: result.probability, leadTime: result.leadTime };
+                riskData[hour] = { probability: result.probability, leadTime: result.leadTime, isBooked: false };
             }
+            
+            // 수요 기반 마감 시간대 결정
+            for (const hour of TIME_SLOTS) {
+                const prob = riskData[hour].probability;
+                let closeChance = (prob / 100) * 0.4;  // 최대 40% 확률로 마감
+                
+                if (currentPeriodInfo.isPerf) closeChance *= 1.5;  // 공연시즌엔 마감 확률 1.5배
+                if (currentPeriodInfo.isHoliday) closeChance *= 1.3;  // 휴일엔 마감 확률 1.3배
+                if (currentPeriodInfo.isExam) closeChance *= 0.3;  // 시험기간엔 마감 확률 0.3배
+                
+                // 저녁 피크 시간대 마감 확률 증가
+                if (hour >= 18 && hour <= 20) closeChance *= 1.4;
+                
+                const randVal = seededRandomForDate(dateSeed + hour * 7);
+                if (randVal < closeChance) {
+                    bookedSlots.add(hour);
+                    riskData[hour].isBooked = true;
+                }
+            }
+            
+            // 마감된 시간대가 선택되어 있으면 제거
+            selectedTimeSlots = selectedTimeSlots.filter(h => !bookedSlots.has(h));
             
             renderChart();
             renderTimeSlots();
             
             document.getElementById('riskWarning').classList.add('hidden');
             document.getElementById('chartSection').classList.remove('hidden');
+            
+            // 마감된 시간대 수 표시
+            if (bookedSlots.size > 0) {
+                document.getElementById('periodAlerts').innerHTML += 
+                    `<div class="alert alert-warning">⚠️ ${bookedSlots.size}개 시간대가 이미 마감되었습니다.</div>`;
+            }
             
             updateBookingSection();
         }
@@ -966,7 +1007,7 @@
         }
         
         function renderTimeSlots() {
-            let html = '<p style="color: #666; margin-bottom: 12px;">⏰ 이미 지난 시간대는 선택할 수 없습니다. 클릭하여 복수 선택/해제 가능합니다.</p>';
+            let html = '<p style="color: #666; margin-bottom: 12px;">⏰ 이미 지난 시간대와 마감된 시간대는 선택할 수 없습니다. 클릭하여 복수 선택/해제 가능합니다.</p>';
             
             const now = new Date();
             const currentHour = now.getHours();
@@ -981,12 +1022,20 @@
                 const isSelected = selectedTimeSlots.includes(hour);
                 const selected = isSelected ? 'selected' : '';
                 const isPastTime = isToday && hour <= currentHour;
+                const isBooked = data.isBooked;
                 
                 if (isPastTime) {
                     html += `
                         <div class="time-slot slot-disabled" title="이미 지난 시간입니다">
                             <div class="time-slot-time">${hour}:00</div>
-                            <div class="time-slot-risk">⛔ 불가</div>
+                            <div class="time-slot-risk">⛔ 지남</div>
+                        </div>
+                    `;
+                } else if (isBooked) {
+                    html += `
+                        <div class="time-slot slot-disabled" title="이미 마감되었습니다" style="background: #ffebee;">
+                            <div class="time-slot-time">${hour}:00</div>
+                            <div class="time-slot-risk">🚫 마감</div>
                         </div>
                     `;
                 } else {

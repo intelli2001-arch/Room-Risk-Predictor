@@ -444,6 +444,31 @@ else:
     predictor = st.session_state['predictor']
     time_data = {}
     
+    # 날짜별 시드로 일관된 마감 시간대 생성
+    date_seed = selected_date.toordinal()
+    np.random.seed(date_seed)
+    
+    # 수요 기반 마감 시간대 결정
+    booked_slots = set()
+    for hour in TIME_SLOTS:
+        prob, lead_time = predictor.predict(selected_date, hour)
+        
+        # 마감 확률 계산 (수요가 높을수록 마감 가능성 높음)
+        close_chance = prob / 100 * 0.4  # 최대 40% 확률로 마감
+        if period_info['is_perf']:
+            close_chance *= 1.5  # 공연시즌엔 마감 확률 1.5배
+        if period_info['is_holiday']:
+            close_chance *= 1.3  # 휴일엔 마감 확률 1.3배
+        if period_info['is_exam']:
+            close_chance *= 0.3  # 시험기간엔 마감 확률 0.3배
+        
+        # 저녁 피크 시간대 마감 확률 증가
+        if 18 <= hour <= 20:
+            close_chance *= 1.4
+        
+        if np.random.random() < close_chance:
+            booked_slots.add(hour)
+    
     for hour in TIME_SLOTS:
         prob, lead_time = predictor.predict(selected_date, hour)
         risk_level, color, emoji = get_risk_level(prob)
@@ -452,19 +477,26 @@ else:
             'lead_time': lead_time,
             'risk_level': risk_level,
             'color': color,
-            'emoji': emoji
+            'emoji': emoji,
+            'is_booked': hour in booked_slots
         }
     
     if 'selected_times' not in st.session_state:
         st.session_state['selected_times'] = []
     
+    # 마감된 시간대가 선택되어 있으면 제거
+    st.session_state['selected_times'] = [h for h in st.session_state['selected_times'] if h not in booked_slots]
     selected_times = st.session_state.get('selected_times', [])
     
     chart = create_time_slot_chart(time_data, selected_times[0] if selected_times else None)
     st.plotly_chart(chart, use_container_width=True)
     
+    booked_count = len(booked_slots)
+    if booked_count > 0:
+        st.warning(f"⚠️ {booked_count}개 시간대가 이미 마감되었습니다.")
+    
     st.markdown("##### 시간대 선택 (복수 선택 가능)")
-    st.caption("⏰ 이미 지난 시간대는 선택할 수 없습니다. 클릭하여 선택/해제하세요.")
+    st.caption("⏰ 이미 지난 시간대와 마감된 시간대는 선택할 수 없습니다. 클릭하여 선택/해제하세요.")
     
     now = datetime.now()
     current_hour = now.hour
@@ -476,11 +508,19 @@ else:
         with cols[col_idx]:
             risk_info = time_data[hour]
             is_past_time = is_today and hour <= current_hour
+            is_booked = risk_info['is_booked']
             is_selected = hour in selected_times
             
             if is_past_time:
                 st.button(
-                    f"{hour}:00\n⛔",
+                    f"{hour}:00\n⛔ 지남",
+                    key=f"time_{hour}",
+                    use_container_width=True,
+                    disabled=True
+                )
+            elif is_booked:
+                st.button(
+                    f"{hour}:00\n🚫 마감",
                     key=f"time_{hour}",
                     use_container_width=True,
                     disabled=True
