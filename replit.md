@@ -21,16 +21,25 @@
 
 ## Project Structure
 ```
-├── app.py                    # 메인 Streamlit 앱
+├── app.py                    # 메인 Streamlit 앱 (Python 백엔드)
+├── index.html                # 정적 HTML 앱 (Netlify 배포용)
+├── netlify.toml              # Netlify 배포 설정
 ├── attached_assets/          # 첨부 파일 (CSV 데이터, 이미지)
 ├── .streamlit/config.toml    # Streamlit 설정
 └── pyproject.toml            # Python 패키지 의존성
 ```
 
 ## Running the App
+
+### Streamlit 버전 (Replit)
 ```bash
 streamlit run app.py --server.port 5000
 ```
+
+### 정적 HTML 버전 (Netlify)
+index.html 파일을 Netlify에 배포하면 됩니다.
+- Netlify에서 GitHub 연동 또는 폴더 드래그 드롭으로 배포
+- netlify.toml 설정 파일 포함됨
 
 ## Data Format
 CSV 데이터 컬럼:
