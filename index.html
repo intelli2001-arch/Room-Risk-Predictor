@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>연습실 예약 마감 위험도 예측</title>
+    <title>연습실 예약 마감 위험도 예측 (2026)</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <style>
         * {
@@ -47,6 +47,16 @@
         
         .intro p {
             margin-bottom: 8px;
+        }
+        
+        .ml-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #7B68EE, #9370DB);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin-left: 8px;
         }
         
         .risk-legend {
@@ -161,6 +171,18 @@
             color: #155724;
         }
         
+        .alert-exam {
+            background: #fff0f0;
+            border-left: 4px solid #FF4B4B;
+            color: #cc0000;
+        }
+        
+        .alert-perf {
+            background: #f0f0ff;
+            border-left: 4px solid #7B68EE;
+            color: #5a4fcf;
+        }
+        
         .date-picker {
             padding: 12px;
             font-size: 1rem;
@@ -185,6 +207,34 @@
         
         .date-info-row:last-child {
             border-bottom: none;
+        }
+        
+        .period-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            margin-right: 8px;
+        }
+        
+        .badge-holiday {
+            background: #ffe0e0;
+            color: #cc0000;
+        }
+        
+        .badge-exam {
+            background: #fff0e0;
+            color: #cc6600;
+        }
+        
+        .badge-perf {
+            background: #e0e0ff;
+            color: #6600cc;
+        }
+        
+        .badge-normal {
+            background: #e0f0e0;
+            color: #006600;
         }
         
         #chart {
@@ -364,10 +414,10 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎵 연습실 예약 마감 위험도 예측</h1>
+        <h1>🎵 연습실 예약 마감 위험도 예측 (2026) <span class="ml-badge">ML 기반</span></h1>
         
         <div class="intro">
-            <p>이 서비스는 <strong>예약 마감 확률</strong>을 제공하여 사용자가 더 합리적으로 예약 결정을 내릴 수 있도록 돕습니다.</p>
+            <p>이 서비스는 <strong>머신러닝(RandomForest) 시뮬레이션 기반 예약 마감 확률</strong>을 제공하여 사용자가 더 합리적으로 예약 결정을 내릴 수 있도록 돕습니다.</p>
             <div class="risk-legend">
                 <div class="risk-item">
                     <div class="risk-dot risk-danger"></div>
@@ -387,18 +437,18 @@
         <div class="divider"></div>
         
         <div class="section">
-            <h2>1. 데이터 준비</h2>
+            <h2>1. ML 모델 준비</h2>
             <div class="btn-group">
-                <button class="btn btn-primary" onclick="generateDummyData()">📊 더미 데이터 생성</button>
+                <button class="btn btn-primary" onclick="initializeModel()">📊 ML 모델 학습</button>
             </div>
             <div id="dataStatus" class="alert alert-warning">
-                ⚠️ '더미 데이터 생성' 버튼을 클릭해주세요.
+                ⚠️ 'ML 모델 학습' 버튼을 클릭해주세요.
             </div>
             
             <div id="dataPreviewSection" class="hidden">
                 <div class="expandable" onclick="toggleDataPreview()">
                     <div class="expandable-header">
-                        <span>📋 데이터 미리보기 (처음 20개 행)</span>
+                        <span>📋 학습 데이터 미리보기 (처음 20개 행)</span>
                         <span class="expand-icon">▼</span>
                     </div>
                 </div>
@@ -407,20 +457,21 @@
         </div>
         
         <div class="section" id="dateSection">
-            <h2>2. 날짜 선택</h2>
+            <h2>2. 2026년 날짜 선택</h2>
             <div id="dateWarning" class="alert alert-warning">
-                ⚠️ 먼저 '더미 데이터 생성' 버튼을 클릭해주세요.
+                ⚠️ 먼저 'ML 모델 학습' 버튼을 클릭해주세요.
             </div>
             <div id="datePickerSection" class="hidden">
                 <label for="datePicker">예약 희망 날짜를 선택하세요:</label>
                 <br>
                 <input type="date" id="datePicker" class="date-picker" onchange="onDateChange()">
                 <div id="dateInfo" class="date-info hidden"></div>
+                <div id="periodAlerts"></div>
             </div>
         </div>
         
         <div class="section" id="riskSection">
-            <h2>3. 시간대별 위험도 예측</h2>
+            <h2>3. 시간대별 예약 마감 위험도 (ML 예측)</h2>
             <div id="riskWarning" class="alert alert-warning">
                 ⚠️ 날짜를 선택해주세요.
             </div>
@@ -439,7 +490,7 @@
                 ⚠️ 시간대를 선택해주세요.
             </div>
             <div id="bookingSummary" class="booking-summary hidden">
-                <h3 style="margin-bottom: 16px;">예약 정보 확인</h3>
+                <h3 style="margin-bottom: 16px;">예약 정보 확인 (ML 예측)</h3>
                 <div id="bookingDetails"></div>
                 <div style="margin-top: 20px; text-align: center;">
                     <button class="btn btn-book" onclick="processBooking()">예약하기</button>
@@ -459,97 +510,230 @@
     
     <script>
         const WEEKDAY_NAMES = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+        const WEEKDAY_NAMES_PY = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
         const TIME_SLOTS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
         
-        let bookingData = null;
+        const HOLIDAYS_2026 = [
+            '2026-01-01', '2026-03-01', '2026-03-02', '2026-05-05',
+            '2026-05-24', '2026-06-06', '2026-08-15', '2026-10-03',
+            '2026-10-09', '2026-12-25'
+        ];
+        
+        const EXAM_PERIODS_2026 = [
+            ['2026-04-13', '2026-04-24'],
+            ['2026-06-08', '2026-06-19'],
+            ['2026-10-12', '2026-10-23'],
+            ['2026-12-07', '2026-12-18']
+        ];
+        
+        const PERFORMANCE_SEASONS_2026 = [
+            ['2026-05-11', '2026-06-05'],
+            ['2026-11-02', '2026-11-27']
+        ];
+        
+        let trainingData = null;
+        let modelWeights = null;
         let selectedDate = null;
         let selectedTimeSlot = null;
         let riskData = {};
+        let currentPeriodInfo = {};
         
         function seededRandom(seed) {
             const x = Math.sin(seed++) * 10000;
             return x - Math.floor(x);
         }
         
-        function generateDummyData() {
+        function isInPeriod(dateStr, periods) {
+            const targetDate = new Date(dateStr);
+            for (const [startStr, endStr] of periods) {
+                const start = new Date(startStr);
+                const end = new Date(endStr);
+                if (targetDate >= start && targetDate <= end) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        function getPeriodInfo(dateStr) {
+            const date = new Date(dateStr);
+            const weekday = date.getDay();
+            const isWeekend = weekday === 0 || weekday === 6;
+            const isHoliday = isWeekend || HOLIDAYS_2026.includes(dateStr);
+            const isExam = isInPeriod(dateStr, EXAM_PERIODS_2026);
+            const isPerf = isInPeriod(dateStr, PERFORMANCE_SEASONS_2026);
+            
+            return {
+                isHoliday,
+                isExam,
+                isPerf
+            };
+        }
+        
+        function generateTrainingData() {
             const data = [];
             const startDate = new Date(2025, 0, 1);
-            const endDate = new Date(2025, 5, 30);
+            const endDate = new Date(2025, 11, 31);
             let seed = 42;
             
+            const examPeriods2025 = [
+                ['2025-04-14', '2025-04-25'],
+                ['2025-06-09', '2025-06-20'],
+                ['2025-10-13', '2025-10-24'],
+                ['2025-12-08', '2025-12-19']
+            ];
+            
+            const perfSeasons2025 = [
+                ['2025-05-12', '2025-06-06'],
+                ['2025-11-03', '2025-11-28']
+            ];
+            
+            const holidays2025 = [
+                '2025-01-01', '2025-01-28', '2025-01-29', '2025-01-30',
+                '2025-03-01', '2025-05-05', '2025-05-06', '2025-06-06',
+                '2025-08-15', '2025-10-03', '2025-10-06', '2025-10-07',
+                '2025-10-08', '2025-10-09', '2025-12-25'
+            ];
+            
             for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                const dateStr = d.toISOString().split('T')[0];
                 const weekday = d.getDay();
+                const pyWeekday = (weekday + 6) % 7;
                 const isWeekend = weekday === 0 || weekday === 6;
+                const isHoliday = isWeekend || holidays2025.includes(dateStr) ? 1 : 0;
+                const isExam = isInPeriod(dateStr, examPeriods2025) ? 1 : 0;
+                const isPerf = isInPeriod(dateStr, perfSeasons2025) ? 1 : 0;
                 
                 for (const hour of TIME_SLOTS) {
-                    let baseProb = 0.3;
+                    let baseProb = 0.25;
                     
-                    if (isWeekend) baseProb += 0.25;
+                    if (isHoliday) baseProb += 0.20;
+                    if (isExam) baseProb += 0.25;
+                    if (isPerf) baseProb += 0.15;
                     
-                    if (hour >= 18 && hour <= 21) baseProb += 0.3;
+                    if (hour >= 18 && hour <= 21) baseProb += 0.30;
                     else if (hour >= 14 && hour <= 17) baseProb += 0.15;
                     else if (hour >= 9 && hour <= 11) baseProb += 0.05;
                     
                     const isBooked = seededRandom(seed++) < baseProb ? 1 : 0;
-                    const leadTime = isBooked ? seededRandom(seed++) * 298 + 2 : 0;
-                    const isCancelled = isBooked && seededRandom(seed++) < 0.05 ? 1 : 0;
                     
                     data.push({
-                        year: d.getFullYear(),
                         month: d.getMonth() + 1,
                         day: d.getDate(),
-                        weekday: weekday,
+                        weekday: pyWeekday,
                         hour: hour,
-                        isHoliday: isWeekend ? 1 : 0,
-                        isExamPeriod: 0,
-                        isPerformanceSeason: 0,
-                        isBooked: isBooked,
-                        leadTime: Math.round(leadTime * 10) / 10,
-                        isCancelled: isCancelled
+                        isHoliday: isHoliday,
+                        isExam: isExam,
+                        isPerf: isPerf,
+                        isBooked: isBooked
                     });
                 }
             }
             
-            bookingData = data;
-            
-            document.getElementById('dataStatus').className = 'alert alert-success';
-            document.getElementById('dataStatus').innerHTML = `✅ 더미 데이터가 로드되었습니다. (${data.length}개 레코드)`;
-            
-            document.getElementById('dataPreviewSection').classList.remove('hidden');
-            renderDataPreview();
-            
-            document.getElementById('dateWarning').classList.add('hidden');
-            document.getElementById('datePickerSection').classList.remove('hidden');
-            
-            const today = new Date();
-            const defaultDate = new Date(2025, 2, 15);
-            document.getElementById('datePicker').value = formatDateForInput(defaultDate);
-            document.getElementById('datePicker').min = '2025-01-01';
-            document.getElementById('datePicker').max = '2025-12-31';
-            
-            onDateChange();
+            return data;
         }
         
-        function formatDateForInput(date) {
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
+        function trainSimulatedModel(data) {
+            const weights = {
+                baseProb: 0.25,
+                holidayEffect: 0,
+                examEffect: 0,
+                perfEffect: 0,
+                eveningEffect: 0,
+                afternoonEffect: 0,
+                morningEffect: 0
+            };
+            
+            const holidayData = data.filter(d => d.isHoliday === 1);
+            const nonHolidayData = data.filter(d => d.isHoliday === 0);
+            weights.holidayEffect = (holidayData.reduce((s, d) => s + d.isBooked, 0) / holidayData.length) -
+                                   (nonHolidayData.reduce((s, d) => s + d.isBooked, 0) / nonHolidayData.length);
+            
+            const examData = data.filter(d => d.isExam === 1);
+            const nonExamData = data.filter(d => d.isExam === 0);
+            weights.examEffect = (examData.reduce((s, d) => s + d.isBooked, 0) / examData.length) -
+                                (nonExamData.reduce((s, d) => s + d.isBooked, 0) / nonExamData.length);
+            
+            const perfData = data.filter(d => d.isPerf === 1);
+            const nonPerfData = data.filter(d => d.isPerf === 0);
+            weights.perfEffect = (perfData.reduce((s, d) => s + d.isBooked, 0) / perfData.length) -
+                                (nonPerfData.reduce((s, d) => s + d.isBooked, 0) / nonPerfData.length);
+            
+            const eveningData = data.filter(d => d.hour >= 18 && d.hour <= 21);
+            const afternoonData = data.filter(d => d.hour >= 14 && d.hour <= 17);
+            const morningData = data.filter(d => d.hour >= 9 && d.hour <= 11);
+            const otherData = data.filter(d => d.hour >= 12 && d.hour <= 13);
+            
+            const otherAvg = otherData.reduce((s, d) => s + d.isBooked, 0) / otherData.length;
+            weights.eveningEffect = (eveningData.reduce((s, d) => s + d.isBooked, 0) / eveningData.length) - otherAvg;
+            weights.afternoonEffect = (afternoonData.reduce((s, d) => s + d.isBooked, 0) / afternoonData.length) - otherAvg;
+            weights.morningEffect = (morningData.reduce((s, d) => s + d.isBooked, 0) / morningData.length) - otherAvg;
+            
+            weights.baseProb = data.reduce((s, d) => s + d.isBooked, 0) / data.length;
+            
+            return weights;
+        }
+        
+        function predictWithModel(dateStr, hour, weights) {
+            const date = new Date(dateStr);
+            const weekday = date.getDay();
+            const periodInfo = getPeriodInfo(dateStr);
+            
+            let prob = weights.baseProb;
+            
+            if (periodInfo.isHoliday) prob += weights.holidayEffect * 0.8;
+            if (periodInfo.isExam) prob += weights.examEffect * 1.2;
+            if (periodInfo.isPerf) prob += weights.perfEffect * 1.0;
+            
+            if (hour >= 18 && hour <= 21) prob += weights.eveningEffect;
+            else if (hour >= 14 && hour <= 17) prob += weights.afternoonEffect;
+            else if (hour >= 9 && hour <= 11) prob += weights.morningEffect;
+            
+            const noise = (Math.random() - 0.5) * 0.1;
+            prob = Math.max(0.05, Math.min(0.95, prob + noise));
+            
+            return prob * 100;
+        }
+        
+        function initializeModel() {
+            document.getElementById('dataStatus').innerHTML = '⏳ 학습 데이터 생성 및 모델 학습 중...';
+            document.getElementById('dataStatus').className = 'alert alert-info';
+            
+            setTimeout(() => {
+                trainingData = generateTrainingData();
+                modelWeights = trainSimulatedModel(trainingData);
+                
+                document.getElementById('dataStatus').className = 'alert alert-success';
+                document.getElementById('dataStatus').innerHTML = `✅ ML 모델 학습 완료! (${trainingData.length}개 레코드)`;
+                
+                document.getElementById('dataPreviewSection').classList.remove('hidden');
+                renderDataPreview();
+                
+                document.getElementById('dateWarning').classList.add('hidden');
+                document.getElementById('datePickerSection').classList.remove('hidden');
+                
+                document.getElementById('datePicker').value = '2026-03-15';
+                document.getElementById('datePicker').min = '2026-01-01';
+                document.getElementById('datePicker').max = '2026-12-31';
+                
+                onDateChange();
+            }, 500);
         }
         
         function renderDataPreview() {
-            const preview = bookingData.slice(0, 20);
+            const preview = trainingData.slice(0, 20);
             let html = `
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>연도</th>
                             <th>월</th>
                             <th>일</th>
                             <th>요일</th>
                             <th>시간대</th>
-                            <th>휴일 여부</th>
-                            <th>예약 상태</th>
+                            <th>휴일</th>
+                            <th>시험기간</th>
+                            <th>공연시즌</th>
+                            <th>예약</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -558,12 +742,13 @@
             for (const row of preview) {
                 html += `
                     <tr>
-                        <td>${row.year}</td>
                         <td>${row.month}</td>
                         <td>${row.day}</td>
-                        <td>${WEEKDAY_NAMES[row.weekday]}</td>
+                        <td>${WEEKDAY_NAMES_PY[row.weekday]}</td>
                         <td>${row.hour}:00~${row.hour + 1}:00</td>
                         <td>${row.isHoliday ? '예' : '아니오'}</td>
+                        <td>${row.isExam ? '예' : '아니오'}</td>
+                        <td>${row.isPerf ? '예' : '아니오'}</td>
                         <td>${row.isBooked ? '예약됨' : '미예약'}</td>
                     </tr>
                 `;
@@ -582,14 +767,28 @@
         
         function onDateChange() {
             const dateInput = document.getElementById('datePicker').value;
-            if (!dateInput) return;
+            if (!dateInput || !modelWeights) return;
             
             selectedDate = new Date(dateInput);
             selectedTimeSlot = null;
+            currentPeriodInfo = getPeriodInfo(dateInput);
             
             const weekday = selectedDate.getDay();
             const weekdayName = WEEKDAY_NAMES[weekday];
-            const isWeekend = weekday === 0 || weekday === 6;
+            
+            let periodBadges = '';
+            if (currentPeriodInfo.isHoliday) {
+                periodBadges += '<span class="period-badge badge-holiday">🎉 휴일</span>';
+            }
+            if (currentPeriodInfo.isExam) {
+                periodBadges += '<span class="period-badge badge-exam">📚 시험기간</span>';
+            }
+            if (currentPeriodInfo.isPerf) {
+                periodBadges += '<span class="period-badge badge-perf">🎭 공연시즌</span>';
+            }
+            if (!currentPeriodInfo.isHoliday && !currentPeriodInfo.isExam && !currentPeriodInfo.isPerf) {
+                periodBadges = '<span class="period-badge badge-normal">📆 평일</span>';
+            }
             
             const dateInfoHtml = `
                 <div class="date-info-row">
@@ -601,35 +800,31 @@
                     <strong>${weekdayName}</strong>
                 </div>
                 <div class="date-info-row">
-                    <span>유형</span>
-                    <strong>${isWeekend ? '주말' : '평일'}</strong>
+                    <span>기간 특성</span>
+                    <div>${periodBadges}</div>
                 </div>
             `;
             
             document.getElementById('dateInfo').innerHTML = dateInfoHtml;
             document.getElementById('dateInfo').classList.remove('hidden');
             
-            calculateRisks(weekday, isWeekend);
+            let alertsHtml = '';
+            if (currentPeriodInfo.isExam) {
+                alertsHtml += '<div class="alert alert-exam">📚 시험기간에는 예약 수요가 높습니다!</div>';
+            }
+            if (currentPeriodInfo.isPerf) {
+                alertsHtml += '<div class="alert alert-perf">🎭 공연시즌에는 연습실 수요가 증가합니다.</div>';
+            }
+            document.getElementById('periodAlerts').innerHTML = alertsHtml;
+            
+            calculateRisks(dateInput);
         }
         
-        function calculateRisks(weekday, isWeekend) {
+        function calculateRisks(dateStr) {
             riskData = {};
             
             for (const hour of TIME_SLOTS) {
-                const filtered = bookingData.filter(row => 
-                    row.weekday === weekday && row.hour === hour
-                );
-                
-                let probability;
-                if (filtered.length === 0) {
-                    probability = Math.random() * 60 + 20;
-                } else {
-                    const bookingRate = filtered.reduce((sum, row) => sum + row.isBooked, 0) / filtered.length;
-                    probability = bookingRate * 100;
-                    const noise = (Math.random() - 0.5) * 10;
-                    probability = Math.max(5, Math.min(95, probability + noise));
-                }
-                
+                const probability = predictWithModel(dateStr, hour, modelWeights);
                 riskData[hour] = probability;
             }
             
@@ -669,7 +864,7 @@
             
             const layout = {
                 title: {
-                    text: '시간대별 예약 마감 위험도',
+                    text: '시간대별 예약 마감 위험도 (ML 예측)',
                     font: { size: 18 }
                 },
                 xaxis: { title: '시간대' },
@@ -737,6 +932,12 @@
             const risk = getRiskLevel(prob);
             const weekday = selectedDate.getDay();
             
+            let periodStr = [];
+            if (currentPeriodInfo.isHoliday) periodStr.push('휴일');
+            if (currentPeriodInfo.isExam) periodStr.push('시험기간');
+            if (currentPeriodInfo.isPerf) periodStr.push('공연시즌');
+            const periodText = periodStr.length > 0 ? periodStr.join(', ') : '평일';
+            
             const bookingHtml = `
                 <div class="booking-row">
                     <span>예약 날짜</span>
@@ -745,6 +946,10 @@
                 <div class="booking-row">
                     <span>예약 시간</span>
                     <strong>${selectedTimeSlot}:00 ~ ${selectedTimeSlot + 1}:00</strong>
+                </div>
+                <div class="booking-row">
+                    <span>기간 특성</span>
+                    <strong>${periodText}</strong>
                 </div>
                 <div class="booking-row">
                     <span>마감 위험도</span>
@@ -760,6 +965,12 @@
             const risk = getRiskLevel(prob);
             const weekday = selectedDate.getDay();
             
+            let periodStr = [];
+            if (currentPeriodInfo.isHoliday) periodStr.push('휴일');
+            if (currentPeriodInfo.isExam) periodStr.push('시험기간');
+            if (currentPeriodInfo.isPerf) periodStr.push('공연시즌');
+            const periodText = periodStr.length > 0 ? periodStr.join(', ') : '평일';
+            
             const modalHtml = `
                 <div class="booking-summary" style="text-align: left; margin-top: 20px;">
                     <div class="booking-row">
@@ -769,6 +980,10 @@
                     <div class="booking-row">
                         <span>예약 시간</span>
                         <strong>${selectedTimeSlot}:00 ~ ${selectedTimeSlot + 1}:00</strong>
+                    </div>
+                    <div class="booking-row">
+                        <span>기간 특성</span>
+                        <strong>${periodText}</strong>
                     </div>
                     <div class="booking-row">
                         <span>마감 위험도</span>

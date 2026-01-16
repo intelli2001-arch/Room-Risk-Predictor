@@ -3,25 +3,95 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+from sklearn.ensemble import RandomForestClassifier
 import os
 
 st.set_page_config(
-    page_title="연습실 예약 마감 위험도 예측",
+    page_title="연습실 예약 마감 위험도 예측 (2026)",
     page_icon="🎵",
     layout="wide"
 )
 
 WEEKDAY_NAMES = {
-    0: '일요일',
-    1: '월요일',
-    2: '화요일',
-    3: '수요일',
-    4: '목요일',
-    5: '금요일',
-    6: '토요일'
+    0: '월요일',
+    1: '화요일',
+    2: '수요일',
+    3: '목요일',
+    4: '금요일',
+    5: '토요일',
+    6: '일요일'
 }
 
 TIME_SLOTS = list(range(9, 23))
+
+HOLIDAYS_2026 = [
+    '2026-01-01', '2026-03-01', '2026-03-02', '2026-05-05',
+    '2026-05-24', '2026-06-06', '2026-08-15', '2026-10-03', 
+    '2026-10-09', '2026-12-25'
+]
+
+EXAM_PERIODS_2026 = [
+    ('2026-04-13', '2026-04-24'),
+    ('2026-06-08', '2026-06-19'),
+    ('2026-10-12', '2026-10-23'),
+    ('2026-12-07', '2026-12-18')
+]
+
+PERFORMANCE_SEASONS_2026 = [
+    ('2026-05-11', '2026-06-05'),
+    ('2026-11-02', '2026-11-27')
+]
+
+class PracticeRoomPredictor:
+    def __init__(self, df):
+        self.df = df
+        self.features = ['월', '일', '요일', '시간', '휴일 여부', '시험기간 여부', '공연시즌 여부']
+        self.model = self._train_model()
+    
+    def _train_model(self):
+        if '시험기간 여부' not in self.df.columns:
+            self.df['시험기간 여부'] = 0
+        if '공연시즌 여부' not in self.df.columns:
+            self.df['공연시즌 여부'] = 0
+        
+        X = self.df[self.features]
+        y = self.df['예약 여부']
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X, y)
+        return model
+    
+    def _is_in_period(self, target_date, periods):
+        for start_str, end_str in periods:
+            start = datetime.strptime(start_str, '%Y-%m-%d').date()
+            end = datetime.strptime(end_str, '%Y-%m-%d').date()
+            if start <= target_date <= end:
+                return 1
+        return 0
+    
+    def predict(self, date_obj, hour):
+        if isinstance(date_obj, str):
+            target_dt = datetime.strptime(date_obj, '%Y-%m-%d')
+            target_date = target_dt.date()
+        else:
+            target_date = date_obj
+            target_dt = datetime.combine(date_obj, datetime.min.time())
+        
+        month = target_date.month
+        day = target_date.day
+        weekday = target_date.weekday()
+        
+        date_str = target_date.strftime('%Y-%m-%d')
+        is_holiday = 1 if (weekday >= 5 or date_str in HOLIDAYS_2026) else 0
+        is_exam = self._is_in_period(target_date, EXAM_PERIODS_2026)
+        is_perf = self._is_in_period(target_date, PERFORMANCE_SEASONS_2026)
+        
+        input_data = pd.DataFrame([[
+            month, day, weekday, hour, is_holiday, is_exam, is_perf
+        ]], columns=self.features)
+        
+        prob = self.model.predict_proba(input_data)[0][1]
+        
+        return prob * 100
 
 def load_real_data():
     csv_path = "attached_assets/practice_room_ML_data_2025_1768532371118.csv"
@@ -30,28 +100,64 @@ def load_real_data():
         return df
     return None
 
-def generate_dummy_data():
+def generate_training_data():
     np.random.seed(42)
     
     data = []
     start_date = datetime(2025, 1, 1)
-    end_date = datetime(2025, 6, 30)
+    end_date = datetime(2025, 12, 31)
     current_date = start_date
+    
+    exam_periods_2025 = [
+        ('2025-04-14', '2025-04-25'),
+        ('2025-06-09', '2025-06-20'),
+        ('2025-10-13', '2025-10-24'),
+        ('2025-12-08', '2025-12-19')
+    ]
+    
+    perf_seasons_2025 = [
+        ('2025-05-12', '2025-06-06'),
+        ('2025-11-03', '2025-11-28')
+    ]
+    
+    holidays_2025 = [
+        '2025-01-01', '2025-01-28', '2025-01-29', '2025-01-30',
+        '2025-03-01', '2025-05-05', '2025-05-06', '2025-06-06',
+        '2025-08-15', '2025-10-03', '2025-10-06', '2025-10-07',
+        '2025-10-08', '2025-10-09', '2025-12-25'
+    ]
+    
+    def is_in_period(date_obj, periods):
+        for start_str, end_str in periods:
+            start = datetime.strptime(start_str, '%Y-%m-%d').date()
+            end = datetime.strptime(end_str, '%Y-%m-%d').date()
+            if start <= date_obj.date() <= end:
+                return 1
+        return 0
     
     while current_date <= end_date:
         weekday = current_date.weekday()
-        python_weekday = (weekday + 1) % 7
+        date_str = current_date.strftime('%Y-%m-%d')
         
         is_weekend = weekday >= 5
+        is_holiday = 1 if (is_weekend or date_str in holidays_2025) else 0
+        is_exam = is_in_period(current_date, exam_periods_2025)
+        is_perf = is_in_period(current_date, perf_seasons_2025)
         
         for hour in TIME_SLOTS:
-            base_prob = 0.3
+            base_prob = 0.25
             
-            if is_weekend:
+            if is_holiday:
+                base_prob += 0.20
+            
+            if is_exam:
                 base_prob += 0.25
             
+            if is_perf:
+                base_prob += 0.15
+            
             if 18 <= hour <= 21:
-                base_prob += 0.3
+                base_prob += 0.30
             elif 14 <= hour <= 17:
                 base_prob += 0.15
             elif 9 <= hour <= 11:
@@ -66,11 +172,11 @@ def generate_dummy_data():
                 '연도': current_date.year,
                 '월': current_date.month,
                 '일': current_date.day,
-                '요일': python_weekday,
+                '요일': weekday,
                 '시간': hour,
-                '휴일 여부': 1 if is_weekend else 0,
-                '시험기간 여부': 0,
-                '공연시즌 여부': 0,
+                '휴일 여부': is_holiday,
+                '시험기간 여부': is_exam,
+                '공연시즌 여부': is_perf,
                 '예약 여부': is_booked,
                 '리드타임_시간': round(lead_time, 1),
                 '취소 여부': is_cancelled
@@ -80,24 +186,6 @@ def generate_dummy_data():
     
     return pd.DataFrame(data)
 
-def calculate_booking_probability(df, target_weekday, target_hour, is_holiday=0):
-    filtered = df[(df['요일'] == target_weekday) & (df['시간'] == target_hour)]
-    
-    if is_holiday:
-        filtered = filtered[filtered['휴일 여부'] == 1]
-    
-    if len(filtered) == 0:
-        return np.random.uniform(0.2, 0.8)
-    
-    booking_rate = filtered['예약 여부'].mean()
-    
-    booking_rate = booking_rate * 100
-    
-    noise = np.random.uniform(-5, 5)
-    booking_rate = max(5, min(95, booking_rate + noise))
-    
-    return booking_rate
-
 def get_risk_level(probability):
     if probability >= 70:
         return "위험", "#FF4B4B", "🔴"
@@ -105,6 +193,37 @@ def get_risk_level(probability):
         return "보통", "#FFA500", "🟠"
     else:
         return "여유", "#00CC66", "🟢"
+
+def get_period_info(date_obj):
+    if isinstance(date_obj, str):
+        date_obj = datetime.strptime(date_obj, '%Y-%m-%d').date()
+    
+    date_str = date_obj.strftime('%Y-%m-%d')
+    weekday = date_obj.weekday()
+    
+    is_holiday = weekday >= 5 or date_str in HOLIDAYS_2026
+    
+    is_exam = False
+    for start_str, end_str in EXAM_PERIODS_2026:
+        start = datetime.strptime(start_str, '%Y-%m-%d').date()
+        end = datetime.strptime(end_str, '%Y-%m-%d').date()
+        if start <= date_obj <= end:
+            is_exam = True
+            break
+    
+    is_perf = False
+    for start_str, end_str in PERFORMANCE_SEASONS_2026:
+        start = datetime.strptime(start_str, '%Y-%m-%d').date()
+        end = datetime.strptime(end_str, '%Y-%m-%d').date()
+        if start <= date_obj <= end:
+            is_perf = True
+            break
+    
+    return {
+        'is_holiday': is_holiday,
+        'is_exam': is_exam,
+        'is_perf': is_perf
+    }
 
 def create_time_slot_chart(time_data, selected_slot=None):
     hours = [f"{h}:00~{h+1}:00" for h in TIME_SLOTS]
@@ -130,7 +249,7 @@ def create_time_slot_chart(time_data, selected_slot=None):
     
     fig.update_layout(
         title=dict(
-            text="시간대별 예약 마감 위험도",
+            text="시간대별 예약 마감 위험도 (ML 예측)",
             font=dict(size=18)
         ),
         xaxis_title="시간대",
@@ -157,9 +276,9 @@ def create_time_slot_chart(time_data, selected_slot=None):
     
     return fig
 
-st.title("🎵 연습실 예약 마감 위험도 예측")
+st.title("🎵 연습실 예약 마감 위험도 예측 (2026)")
 st.markdown("""
-이 서비스는 **예약 마감 확률**을 제공하여 사용자가 더 합리적으로 예약 결정을 내릴 수 있도록 돕습니다.
+이 서비스는 **머신러닝(RandomForest) 기반 예약 마감 확률**을 제공하여 사용자가 더 합리적으로 예약 결정을 내릴 수 있도록 돕습니다.
 
 - **위험 (70% 이상)**: 마감 가능성이 높아 빠른 예약을 권장합니다.
 - **보통 (40~70%)**: 적당한 시간 내 예약을 권장합니다.
@@ -168,88 +287,105 @@ st.markdown("""
 
 st.divider()
 
-st.subheader("1. 데이터 준비")
+st.subheader("1. ML 모델 준비")
 
 col1, col2, col3 = st.columns([1, 1, 2])
 
 with col1:
-    if st.button("📊 더미 데이터 생성", type="primary", use_container_width=True):
-        with st.spinner("데이터 생성 중..."):
-            st.session_state['booking_data'] = generate_dummy_data()
-            st.session_state['data_source'] = "더미 데이터"
-        st.success("더미 데이터가 생성되었습니다!")
+    if st.button("📊 학습 데이터 생성", type="primary", use_container_width=True):
+        with st.spinner("학습 데이터 생성 및 모델 학습 중..."):
+            training_data = generate_training_data()
+            st.session_state['training_data'] = training_data
+            st.session_state['predictor'] = PracticeRoomPredictor(training_data)
+            st.session_state['data_source'] = "생성된 학습 데이터"
+        st.success("ML 모델 학습 완료!")
         st.rerun()
 
 with col2:
     real_data_available = os.path.exists("attached_assets/practice_room_ML_data_2025_1768532371118.csv")
     if real_data_available:
-        if st.button("📁 실제 데이터 로드", use_container_width=True):
-            with st.spinner("데이터 로드 중..."):
-                st.session_state['booking_data'] = load_real_data()
-                st.session_state['data_source'] = "실제 데이터"
-            st.success("실제 데이터가 로드되었습니다!")
+        if st.button("📁 실제 데이터로 학습", use_container_width=True):
+            with st.spinner("실제 데이터 로드 및 모델 학습 중..."):
+                real_data = load_real_data()
+                st.session_state['training_data'] = real_data
+                st.session_state['predictor'] = PracticeRoomPredictor(real_data)
+                st.session_state['data_source'] = "실제 CSV 데이터"
+            st.success("ML 모델 학습 완료!")
             st.rerun()
 
 with col3:
-    if 'booking_data' in st.session_state:
-        st.info(f"✅ {st.session_state['data_source']}가 로드되었습니다. ({len(st.session_state['booking_data'])}개 레코드)")
+    if 'predictor' in st.session_state:
+        st.info(f"✅ {st.session_state['data_source']}로 학습 완료 ({len(st.session_state['training_data'])}개 레코드)")
 
-if 'booking_data' in st.session_state:
-    with st.expander("📋 데이터 미리보기 (처음 20개 행)"):
-        display_df = st.session_state['booking_data'].head(20).copy()
+if 'training_data' in st.session_state:
+    with st.expander("📋 학습 데이터 미리보기 (처음 20개 행)"):
+        display_df = st.session_state['training_data'].head(20).copy()
         display_df['요일명'] = display_df['요일'].map(WEEKDAY_NAMES)
         display_df['시간대'] = display_df['시간'].apply(lambda x: f"{x}:00~{x+1}:00")
         display_df['예약 상태'] = display_df['예약 여부'].map({0: '미예약', 1: '예약됨'})
         
+        cols_to_show = ['연도', '월', '일', '요일명', '시간대', '휴일 여부', '시험기간 여부', '공연시즌 여부', '예약 상태']
+        cols_available = [c for c in cols_to_show if c in display_df.columns]
+        
         st.dataframe(
-            display_df[['연도', '월', '일', '요일명', '시간대', '휴일 여부', '예약 상태']],
+            display_df[cols_available],
             use_container_width=True,
             hide_index=True
         )
 
 st.divider()
 
-st.subheader("2. 날짜 선택")
+st.subheader("2. 2026년 날짜 선택")
 
-if 'booking_data' not in st.session_state:
-    st.warning("⚠️ 먼저 '더미 데이터 생성' 버튼을 클릭해주세요.")
+if 'predictor' not in st.session_state:
+    st.warning("⚠️ 먼저 '학습 데이터 생성' 버튼을 클릭해주세요.")
 else:
     col_date1, col_date2 = st.columns([1, 2])
     
     with col_date1:
         selected_date = st.date_input(
             "예약 희망 날짜를 선택하세요",
-            value=datetime(2025, 3, 15),
-            min_value=datetime(2025, 1, 1),
-            max_value=datetime(2025, 12, 31),
+            value=datetime(2026, 3, 15),
+            min_value=datetime(2026, 1, 1),
+            max_value=datetime(2026, 12, 31),
             format="YYYY-MM-DD"
         )
     
     with col_date2:
-        weekday_num = (selected_date.weekday() + 1) % 7
+        weekday_num = selected_date.weekday()
         weekday_name = WEEKDAY_NAMES[weekday_num]
-        is_weekend = selected_date.weekday() >= 5
+        period_info = get_period_info(selected_date)
+        
+        period_badges = []
+        if period_info['is_holiday']:
+            period_badges.append("🎉 휴일")
+        if period_info['is_exam']:
+            period_badges.append("📚 시험기간")
+        if period_info['is_perf']:
+            period_badges.append("🎭 공연시즌")
+        
+        period_text = " | ".join(period_badges) if period_badges else "📆 평일"
         
         st.markdown(f"""
         **선택된 날짜 정보:**
         - 📅 날짜: {selected_date.strftime('%Y년 %m월 %d일')} ({weekday_name})
-        - {'🎉 주말/휴일' if is_weekend else '📆 평일'}
+        - {period_text}
         """)
+        
+        if period_info['is_exam']:
+            st.warning("📚 시험기간에는 예약 수요가 높습니다!")
+        if period_info['is_perf']:
+            st.info("🎭 공연시즌에는 연습실 수요가 증가합니다.")
     
     st.divider()
     
-    st.subheader("3. 시간대별 예약 마감 위험도")
+    st.subheader("3. 시간대별 예약 마감 위험도 (ML 예측)")
     
-    df = st.session_state['booking_data']
+    predictor = st.session_state['predictor']
     time_data = {}
     
     for hour in TIME_SLOTS:
-        prob = calculate_booking_probability(
-            df, 
-            weekday_num, 
-            hour, 
-            is_holiday=1 if is_weekend else 0
-        )
+        prob = predictor.predict(selected_date, hour)
         risk_level, color, emoji = get_risk_level(prob)
         time_data[hour] = {
             'probability': prob,
@@ -270,7 +406,6 @@ else:
         col_idx = idx % 7
         with cols[col_idx]:
             risk_info = time_data[hour]
-            button_label = f"{hour}:00\n{risk_info['emoji']}\n{risk_info['probability']:.0f}%"
             
             if st.button(
                 f"{hour}:00\n{risk_info['emoji']}",
@@ -301,6 +436,15 @@ else:
         
         with info_col1:
             risk_color = sel_info['color']
+            period_text_short = []
+            if period_info['is_holiday']:
+                period_text_short.append("휴일")
+            if period_info['is_exam']:
+                period_text_short.append("시험기간")
+            if period_info['is_perf']:
+                period_text_short.append("공연시즌")
+            period_str = ", ".join(period_text_short) if period_text_short else "평일"
+            
             st.markdown(f"""
             <div style="
                 background: linear-gradient(135deg, {risk_color}22, {risk_color}44);
@@ -309,10 +453,11 @@ else:
                 border-radius: 10px;
                 margin: 10px 0;
             ">
-                <h3 style="margin: 0; color: #333;">📍 예약 정보</h3>
+                <h3 style="margin: 0; color: #333;">📍 예약 정보 (ML 예측)</h3>
                 <p style="font-size: 16px; margin-top: 10px;">
                     <strong>날짜:</strong> {selected_date.strftime('%Y년 %m월 %d일')} ({weekday_name})<br>
                     <strong>시간:</strong> {sel_hour}:00 ~ {sel_hour+1}:00 (1시간)<br>
+                    <strong>기간 특성:</strong> {period_str}<br>
                     <strong>마감 확률:</strong> <span style="font-size: 24px; font-weight: bold; color: {risk_color};">{sel_info['probability']:.1f}%</span><br>
                     <strong>위험도:</strong> {sel_info['emoji']} {sel_info['risk_level']}
                 </p>
@@ -391,4 +536,4 @@ else:
                 st.rerun()
 
 st.divider()
-st.caption("🎵 연습실 예약 마감 위험도 예측 PoC | SpaceCloud 참고")
+st.caption("🎵 연습실 예약 마감 위험도 예측 PoC (2026) | ML 기반 예측 | SpaceCloud 참고")
