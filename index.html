@@ -775,7 +775,7 @@
                 const todayStr = today.toISOString().split('T')[0];
                 const minDate2026 = '2026-01-01';
                 const minDate = todayStr > minDate2026 ? todayStr : minDate2026;
-                const defaultDate = todayStr > '2026-03-15' ? todayStr : '2026-03-15';
+                const defaultDate = minDate;  // 기본값을 오늘 날짜로 설정
                 
                 document.getElementById('datePicker').value = defaultDate > '2026-12-31' ? '2026-12-31' : defaultDate;
                 document.getElementById('datePicker').min = minDate > '2026-12-31' ? '2026-12-31' : minDate;

@@ -399,7 +399,8 @@ else:
     min_date = max(today, datetime(2026, 1, 1).date())
     
     with col_date1:
-        default_date = max(min_date, datetime(2026, 3, 15).date())
+        today = datetime.now().date()
+        default_date = max(min_date, today)
         selected_date = st.date_input(
             "예약 희망 날짜를 선택하세요",
             value=default_date,
