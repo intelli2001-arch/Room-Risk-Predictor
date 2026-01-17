@@ -172,6 +172,125 @@
             color: #155724;
         }
         
+        .main-tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .main-tab {
+            padding: 12px 24px;
+            background: #f0f2f6;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .main-tab:hover {
+            background: #e8eaf0;
+        }
+        
+        .main-tab.active {
+            background: white;
+            border-bottom: 3px solid #FF4B4B;
+            color: #FF4B4B;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .biz-subtabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .biz-subtab {
+            padding: 10px 20px;
+            background: #f0f2f6;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        
+        .biz-subtab.active {
+            background: #FF4B4B;
+            color: white;
+            border-color: #FF4B4B;
+        }
+        
+        .analysis-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .promo-slots {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .promo-slot {
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid #ddd;
+            background: #f5f5f5;
+        }
+        
+        .promo-slot.open-practice {
+            background: #e3f2fd;
+            border-color: #2196F3;
+        }
+        
+        .promo-slot.time-sale {
+            background: #fff3e0;
+            border-color: #FF9800;
+        }
+        
+        .promo-select {
+            width: 100%;
+            padding: 4px;
+            margin-top: 6px;
+            font-size: 0.75rem;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        
+        .promo-summary {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .promo-summary-card {
+            padding: 15px;
+            border-radius: 10px;
+        }
+        
+        .promo-summary-card.open-practice {
+            background: #e3f2fd;
+        }
+        
+        .promo-summary-card.time-sale {
+            background: #fff3e0;
+        }
+        
         .alert-exam {
             background: #fff0f0;
             border-left: 4px solid #FF4B4B;
@@ -434,6 +553,14 @@
     <div class="container">
         <h1>🎵 연습실 예약 마감 위험도 예측 (2026) <span class="ml-badge">ML 기반</span></h1>
         
+        <div class="main-tabs">
+            <button class="main-tab active" onclick="switchMainTab('customer')">👤 고객</button>
+            <button class="main-tab" onclick="switchMainTab('business')">🏢 사업자</button>
+        </div>
+        
+        <!-- 고객 탭 -->
+        <div id="customerTab" class="tab-content active">
+        
         <div class="intro">
             <p>이 서비스는 <strong>머신러닝(RandomForest) 시뮬레이션 기반 예약 마감 확률</strong>을 제공하여 사용자가 더 합리적으로 예약 결정을 내릴 수 있도록 돕습니다.</p>
             <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
@@ -537,6 +664,97 @@
                 </div>
             </div>
         </div>
+        
+        </div><!-- End customerTab -->
+        
+        <!-- 사업자 탭 -->
+        <div id="businessTab" class="tab-content">
+            <div class="intro">
+                <p><strong>사업자용 대시보드</strong>입니다. ML 분석 결과를 활용하여 공간 운영을 최적화하세요.</p>
+                <ul style="margin-top: 12px; padding-left: 20px;">
+                    <li>📊 <strong>공간 활용률 분석</strong>: 시기별, 시간대별 수요 패턴 파악</li>
+                    <li>🏷️ <strong>프로모션 관리</strong>: 저수요 시간대를 오픈연습실이나 타임세일로 전환</li>
+                </ul>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="section">
+                <h2>ML 모델 준비</h2>
+                <div id="bizDataStatus" class="alert alert-warning">
+                    ⚠️ 'ML 모델 학습' 버튼을 클릭해주세요.
+                </div>
+                <div id="bizModelReady" class="alert alert-success hidden">
+                    ✅ ML 모델 준비 완료
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="initializeModel()">📊 ML 모델 학습</button>
+                </div>
+            </div>
+            
+            <div id="bizAnalysisSection" class="hidden">
+                <div class="biz-subtabs">
+                    <button class="biz-subtab active" onclick="switchBizTab('analysis')">📊 공간 활용률 분석</button>
+                    <button class="biz-subtab" onclick="switchBizTab('promo')">🏷️ 프로모션 관리</button>
+                </div>
+                
+                <!-- 공간 활용률 분석 -->
+                <div id="analysisContent" class="section">
+                    <h2>📊 공간 활용률 분석</h2>
+                    <div style="margin-bottom: 16px;">
+                        <label for="analysisType">분석 유형 선택:</label>
+                        <select id="analysisType" class="date-picker" style="width: auto;" onchange="runAnalysis()">
+                            <option value="monthly">월별 평균 수요</option>
+                            <option value="weekday">요일별 평균 수요</option>
+                            <option value="hourly">시간대별 평균 수요</option>
+                            <option value="period">기간 특성별 수요</option>
+                        </select>
+                    </div>
+                    <div id="analysisChart"></div>
+                    <p style="color: #666; margin-top: 12px;">💡 수요가 낮은 시간대/기간을 타임세일이나 오픈연습실로 전환하면 수익을 높일 수 있습니다.</p>
+                </div>
+                
+                <!-- 프로모션 관리 -->
+                <div id="promoContent" class="section hidden">
+                    <h2>🏷️ 저수요 시간대 프로모션 관리</h2>
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 16px;">
+                        <div>
+                            <label for="promoDate">분석할 날짜:</label><br>
+                            <input type="date" id="promoDate" class="date-picker" onchange="analyzePromoSlots()">
+                        </div>
+                        <div>
+                            <label for="promoThreshold">저수요 기준 (% 이하):</label><br>
+                            <input type="range" id="promoThreshold" min="10" max="50" value="30" style="width: 150px;" onchange="analyzePromoSlots()">
+                            <span id="thresholdValue">30%</span>
+                        </div>
+                    </div>
+                    <div id="promoWarning" class="alert alert-warning">
+                        날짜를 선택해주세요.
+                    </div>
+                    <div id="promoSlotsContainer" class="hidden">
+                        <div id="promoInfo"></div>
+                        <div id="promoSlots" class="promo-slots"></div>
+                        <div class="divider"></div>
+                        <h3>프로모션 요약</h3>
+                        <div class="promo-summary">
+                            <div class="promo-summary-card open-practice">
+                                <h4 style="color: #2196F3; margin-bottom: 8px;">🎸 오픈연습실</h4>
+                                <p style="font-size: 0.9rem; color: #666; margin-bottom: 8px;">누구나 자유롭게 이용 가능한 개방 시간</p>
+                                <strong id="openPracticeCount">0개 시간대</strong>
+                                <div id="openPracticeSlots"></div>
+                            </div>
+                            <div class="promo-summary-card time-sale">
+                                <h4 style="color: #FF9800; margin-bottom: 8px;">💰 타임세일</h4>
+                                <p style="font-size: 0.9rem; color: #666; margin-bottom: 8px;">할인된 가격으로 예약 유도</p>
+                                <strong id="timeSaleCount">0개 시간대</strong>
+                                <div id="timeSaleSlots"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div><!-- End businessTab -->
+        
     </div>
     
     <div id="bookingModal" class="modal">
@@ -1212,6 +1430,265 @@
                 closeModal();
             }
         });
+        
+        // Tab switching functions
+        function switchMainTab(tabName) {
+            document.querySelectorAll('.main-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            if (tabName === 'customer') {
+                document.querySelector('.main-tab:nth-child(1)').classList.add('active');
+                document.getElementById('customerTab').classList.add('active');
+            } else {
+                document.querySelector('.main-tab:nth-child(2)').classList.add('active');
+                document.getElementById('businessTab').classList.add('active');
+                updateBizStatus();
+            }
+        }
+        
+        function updateBizStatus() {
+            if (modelWeights) {
+                document.getElementById('bizDataStatus').classList.add('hidden');
+                document.getElementById('bizModelReady').classList.remove('hidden');
+                document.getElementById('bizAnalysisSection').classList.remove('hidden');
+                runAnalysis();
+            }
+        }
+        
+        function switchBizTab(tabName) {
+            document.querySelectorAll('.biz-subtab').forEach(tab => tab.classList.remove('active'));
+            
+            if (tabName === 'analysis') {
+                document.querySelector('.biz-subtab:nth-child(1)').classList.add('active');
+                document.getElementById('analysisContent').classList.remove('hidden');
+                document.getElementById('promoContent').classList.add('hidden');
+                runAnalysis();
+            } else {
+                document.querySelector('.biz-subtab:nth-child(2)').classList.add('active');
+                document.getElementById('analysisContent').classList.add('hidden');
+                document.getElementById('promoContent').classList.remove('hidden');
+                initPromoDate();
+            }
+        }
+        
+        function initPromoDate() {
+            const today = new Date();
+            const minDate = new Date(2026, 0, 1);
+            const defaultDate = today < minDate ? minDate : today;
+            const promoDateInput = document.getElementById('promoDate');
+            promoDateInput.min = minDate.toISOString().split('T')[0];
+            promoDateInput.max = '2026-12-31';
+            promoDateInput.value = defaultDate.toISOString().split('T')[0];
+        }
+        
+        let promoSlotStatus = {};
+        
+        function runAnalysis() {
+            if (!modelWeights) return;
+            
+            const analysisType = document.getElementById('analysisType').value;
+            let labels = [];
+            let values = [];
+            let colors = [];
+            
+            const getColor = (val) => {
+                if (val > 60) return '#FF4B4B';
+                if (val > 40) return '#FFA500';
+                if (val > 25) return '#FFD700';
+                return '#00CC66';
+            };
+            
+            if (analysisType === 'monthly') {
+                for (let month = 1; month <= 12; month++) {
+                    let probs = [];
+                    for (const day of [10, 15, 20]) {
+                        for (const hour of TIME_SLOTS) {
+                            try {
+                                const dateStr = `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                const result = predictWithModel(dateStr, hour, modelWeights);
+                                probs.push(result.probability);
+                            } catch (e) {}
+                        }
+                    }
+                    if (probs.length > 0) {
+                        const avg = probs.reduce((a, b) => a + b, 0) / probs.length;
+                        labels.push(`${month}월`);
+                        values.push(avg);
+                        colors.push(getColor(avg));
+                    }
+                }
+            } else if (analysisType === 'weekday') {
+                const weekdayProbs = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []};
+                for (const month of [3, 6, 9, 11]) {
+                    for (let day = 1; day <= 28; day++) {
+                        try {
+                            const dateStr = `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            const date = new Date(dateStr);
+                            const weekday = (date.getDay() + 6) % 7;
+                            for (const hour of TIME_SLOTS) {
+                                const result = predictWithModel(dateStr, hour, modelWeights);
+                                weekdayProbs[weekday].push(result.probability);
+                            }
+                        } catch (e) {}
+                    }
+                }
+                for (let wd = 0; wd < 7; wd++) {
+                    if (weekdayProbs[wd].length > 0) {
+                        const avg = weekdayProbs[wd].reduce((a, b) => a + b, 0) / weekdayProbs[wd].length;
+                        labels.push(WEEKDAY_NAMES_PY[wd]);
+                        values.push(avg);
+                        colors.push(getColor(avg));
+                    }
+                }
+            } else if (analysisType === 'hourly') {
+                const hourProbs = {};
+                TIME_SLOTS.forEach(h => hourProbs[h] = []);
+                for (const month of [3, 6, 9, 11]) {
+                    for (const day of [10, 15, 20]) {
+                        try {
+                            const dateStr = `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            for (const hour of TIME_SLOTS) {
+                                const result = predictWithModel(dateStr, hour, modelWeights);
+                                hourProbs[hour].push(result.probability);
+                            }
+                        } catch (e) {}
+                    }
+                }
+                for (const hour of TIME_SLOTS) {
+                    if (hourProbs[hour].length > 0) {
+                        const avg = hourProbs[hour].reduce((a, b) => a + b, 0) / hourProbs[hour].length;
+                        labels.push(`${hour}:00`);
+                        values.push(avg);
+                        colors.push(getColor(avg));
+                    }
+                }
+            } else if (analysisType === 'period') {
+                const periodProbs = {'평일': [], '휴일/주말': [], '시험기간': [], '공연시즌': []};
+                for (let month = 1; month <= 12; month++) {
+                    for (let day = 1; day <= 28; day++) {
+                        try {
+                            const dateStr = `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            const period = getPeriodInfo(dateStr);
+                            for (const hour of TIME_SLOTS) {
+                                const result = predictWithModel(dateStr, hour, modelWeights);
+                                if (period.isExam) periodProbs['시험기간'].push(result.probability);
+                                else if (period.isPerf) periodProbs['공연시즌'].push(result.probability);
+                                else if (period.isHoliday) periodProbs['휴일/주말'].push(result.probability);
+                                else periodProbs['평일'].push(result.probability);
+                            }
+                        } catch (e) {}
+                    }
+                }
+                const periodColors = {'평일': '#00CC66', '휴일/주말': '#FFA500', '시험기간': '#3498db', '공연시즌': '#FF4B4B'};
+                for (const [period, probs] of Object.entries(periodProbs)) {
+                    if (probs.length > 0) {
+                        const avg = probs.reduce((a, b) => a + b, 0) / probs.length;
+                        labels.push(period);
+                        values.push(avg);
+                        colors.push(periodColors[period]);
+                    }
+                }
+            }
+            
+            const trace = {
+                x: labels,
+                y: values,
+                type: 'bar',
+                marker: { color: colors },
+                text: values.map(v => `${v.toFixed(0)}%`),
+                textposition: 'outside'
+            };
+            
+            const titles = {
+                'monthly': '월별 평균 예약 수요',
+                'weekday': '요일별 평균 예약 수요',
+                'hourly': '시간대별 평균 예약 수요',
+                'period': '기간 특성별 평균 예약 수요'
+            };
+            
+            const layout = {
+                title: titles[analysisType],
+                yaxis: { title: '수요 (%)', range: [0, Math.max(...values) * 1.2] },
+                height: 400,
+                showlegend: false
+            };
+            
+            Plotly.newPlot('analysisChart', [trace], layout, { responsive: true });
+        }
+        
+        function analyzePromoSlots() {
+            if (!modelWeights) return;
+            
+            const promoDateStr = document.getElementById('promoDate').value;
+            if (!promoDateStr) return;
+            
+            const threshold = parseInt(document.getElementById('promoThreshold').value);
+            document.getElementById('thresholdValue').textContent = threshold + '%';
+            
+            if (!promoSlotStatus[promoDateStr]) {
+                promoSlotStatus[promoDateStr] = {};
+            }
+            
+            const lowDemandSlots = [];
+            
+            for (const hour of TIME_SLOTS) {
+                const result = predictWithModel(promoDateStr, hour, modelWeights);
+                if (result.probability < threshold) {
+                    lowDemandSlots.push({ hour, prob: result.probability });
+                }
+            }
+            
+            if (lowDemandSlots.length === 0) {
+                document.getElementById('promoWarning').classList.remove('hidden');
+                document.getElementById('promoWarning').innerHTML = `✅ 모든 시간대의 수요가 ${threshold}% 이상입니다. 프로모션이 필요하지 않습니다.`;
+                document.getElementById('promoWarning').className = 'alert alert-success';
+                document.getElementById('promoSlotsContainer').classList.add('hidden');
+                return;
+            }
+            
+            document.getElementById('promoWarning').classList.add('hidden');
+            document.getElementById('promoSlotsContainer').classList.remove('hidden');
+            document.getElementById('promoInfo').innerHTML = `<div class="alert alert-warning">📉 ${lowDemandSlots.length}개 저수요 시간대 발견 (수요 ${threshold}% 미만)</div>`;
+            
+            let slotsHtml = '';
+            for (const slot of lowDemandSlots) {
+                const currentStatus = promoSlotStatus[promoDateStr][slot.hour] || '일반';
+                const slotClass = currentStatus === '오픈연습실' ? 'open-practice' : currentStatus === '타임세일' ? 'time-sale' : '';
+                
+                slotsHtml += `
+                    <div class="promo-slot ${slotClass}">
+                        <strong>${slot.hour}:00</strong><br>
+                        <span style="color: #666; font-size: 0.8rem;">수요: ${slot.prob.toFixed(0)}%</span>
+                        <select class="promo-select" onchange="updatePromoSlot('${promoDateStr}', ${slot.hour}, this.value)">
+                            <option value="일반" ${currentStatus === '일반' ? 'selected' : ''}>일반</option>
+                            <option value="오픈연습실" ${currentStatus === '오픈연습실' ? 'selected' : ''}>오픈연습실</option>
+                            <option value="타임세일" ${currentStatus === '타임세일' ? 'selected' : ''}>타임세일</option>
+                        </select>
+                    </div>
+                `;
+            }
+            
+            document.getElementById('promoSlots').innerHTML = slotsHtml;
+            updatePromoSummary(promoDateStr);
+        }
+        
+        function updatePromoSlot(dateStr, hour, status) {
+            if (!promoSlotStatus[dateStr]) promoSlotStatus[dateStr] = {};
+            promoSlotStatus[dateStr][hour] = status;
+            analyzePromoSlots();
+        }
+        
+        function updatePromoSummary(dateStr) {
+            const slots = promoSlotStatus[dateStr] || {};
+            const openPractice = Object.entries(slots).filter(([h, s]) => s === '오픈연습실').map(([h]) => parseInt(h)).sort((a,b) => a-b);
+            const timeSale = Object.entries(slots).filter(([h, s]) => s === '타임세일').map(([h]) => parseInt(h)).sort((a,b) => a-b);
+            
+            document.getElementById('openPracticeCount').textContent = `${openPractice.length}개 시간대`;
+            document.getElementById('openPracticeSlots').innerHTML = openPractice.length > 0 ? openPractice.map(h => `${h}:00`).join(', ') : '';
+            
+            document.getElementById('timeSaleCount').textContent = `${timeSale.length}개 시간대`;
+            document.getElementById('timeSaleSlots').innerHTML = timeSale.length > 0 ? timeSale.map(h => `${h}:00`).join(', ') : '';
+        }
     </script>
 </body>
 </html>
