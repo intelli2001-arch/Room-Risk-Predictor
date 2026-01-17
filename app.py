@@ -511,10 +511,22 @@ def analyze_utilization(predictor):
     
     st.caption("💡 수요가 낮은 시간대/기간을 타임세일이나 오픈연습실로 전환하면 수익을 높일 수 있습니다.")
 
-def render_promotion_management(predictor):
+def render_promotion_management():
     st.subheader("🏷️ 저수요 시간대 프로모션 관리")
     
-    col_date, col_threshold = st.columns(2)
+    col_room, col_date, col_threshold = st.columns(3)
+    
+    with col_room:
+        room_ids = list(ROOMS.keys())
+        promo_room_options = [f"{rid}룸 ({ROOMS[rid]['capacity']})" for rid in room_ids]
+        promo_room_idx = st.selectbox(
+            "연습실 선택",
+            range(len(promo_room_options)),
+            format_func=lambda x: promo_room_options[x],
+            key="promo_room"
+        )
+        promo_room_id = room_ids[promo_room_idx]
+        promo_room = ROOMS[promo_room_id]
     
     with col_date:
         today = datetime.now().date()
@@ -535,16 +547,22 @@ def render_promotion_management(predictor):
     if 'promo_slots' not in st.session_state:
         st.session_state['promo_slots'] = {}
     
-    promo_key = promo_date.strftime('%Y-%m-%d')
+    promo_key = f"{promo_room_id}_{promo_date.strftime('%Y-%m-%d')}"
     if promo_key not in st.session_state['promo_slots']:
         st.session_state['promo_slots'][promo_key] = {}
     
     if 'booked_slots_cache' not in st.session_state:
         st.session_state['booked_slots_cache'] = {}
     
-    if promo_key not in st.session_state['booked_slots_cache']:
+    predictor = st.session_state.get('room_predictors', {}).get(promo_room_id)
+    if predictor is None:
+        st.warning(f"⚠️ {promo_room['name']}의 ML 모델이 학습되지 않았습니다. 먼저 고객 탭에서 모델을 학습해주세요.")
+        return
+    
+    booked_cache_key = f"{promo_room_id}_{promo_date.strftime('%Y-%m-%d')}"
+    if booked_cache_key not in st.session_state['booked_slots_cache']:
         period_info = get_period_info(promo_date)
-        date_seed = promo_date.toordinal()
+        date_seed = promo_date.toordinal() + ord(promo_room_id)
         np.random.seed(date_seed)
         booked_slots = set()
         for hour in TIME_SLOTS:
@@ -560,9 +578,9 @@ def render_promotion_management(predictor):
                 close_chance *= 1.4
             if np.random.random() < close_chance:
                 booked_slots.add(hour)
-        st.session_state['booked_slots_cache'][promo_key] = booked_slots
+        st.session_state['booked_slots_cache'][booked_cache_key] = booked_slots
     
-    booked_slots = st.session_state['booked_slots_cache'].get(promo_key, set())
+    booked_slots = st.session_state['booked_slots_cache'].get(booked_cache_key, set())
     
     low_demand_slots = []
     booked_excluded_count = 0
@@ -622,7 +640,7 @@ def render_promotion_management(predictor):
         
         st.divider()
         
-        st.markdown("##### 프로모션 요약")
+        st.markdown(f"##### {promo_room['name']} 프로모션 요약")
         open_practice = [h for h, p in st.session_state['promo_slots'].get(promo_key, {}).items() if p == '오픈연습실']
         time_sale = [h for h, p in st.session_state['promo_slots'].get(promo_key, {}).items() if p == '타임세일']
         
@@ -815,14 +833,13 @@ with tab_customer:
             st.warning(f"⚠️ {booked_count}개 시간대가 이미 마감되었습니다.")
         
         st.markdown("##### 시간대 선택 (복수 선택 가능)")
-        st.caption("⏰ 이미 지난 시간대와 마감된 시간대는 선택할 수 없습니다. 클릭하여 선택/해제하세요.")
         
         now = datetime.now()
         current_hour = now.hour
         is_today = selected_date == now.date()
         
-        date_key = selected_date.strftime('%Y-%m-%d')
-        promo_for_date = st.session_state.get('promo_slots', {}).get(date_key, {})
+        promo_key = f"{selected_room_id}_{selected_date.strftime('%Y-%m-%d')}"
+        promo_for_date = st.session_state.get('promo_slots', {}).get(promo_key, {})
         
         cols = st.columns(7)
         for idx, hour in enumerate(TIME_SLOTS):
@@ -849,18 +866,27 @@ with tab_customer:
                         disabled=True
                     )
                 else:
-                    promo_emoji = ""
                     if promo_status == '오픈연습실':
                         promo_emoji = "🎸"
+                        promo_label = "오픈"
                     elif promo_status == '타임세일':
                         promo_emoji = "💰"
+                        promo_label = "세일"
+                    else:
+                        promo_emoji = ""
+                        promo_label = ""
                     
-                    button_label = f"{'✅ ' if is_selected else ''}{hour}:00\n{promo_emoji if promo_emoji else risk_info['emoji']}"
+                    if promo_status != '일반':
+                        button_label = f"{'✅ ' if is_selected else ''}{promo_emoji} {promo_label}\n{hour}:00"
+                    else:
+                        button_label = f"{'✅ ' if is_selected else ''}{hour}:00\n{risk_info['emoji']}"
+                    
                     if st.button(
                         button_label,
                         key=f"time_{hour}",
                         use_container_width=True,
-                        type="primary" if is_selected else "secondary"
+                        type="primary" if is_selected else "secondary",
+                        help=f"{promo_status} - ₩{OPEN_PRACTICE_FLAT_RATE:,} 정액" if promo_status == '오픈연습실' else f"30% 할인" if promo_status == '타임세일' else None
                     ):
                         if hour in st.session_state['selected_times']:
                             st.session_state['selected_times'].remove(hour)
@@ -897,8 +923,8 @@ with tab_customer:
             hourly_rate = selected_room['hourly_rate']
             total_hours = len(selected_times)
             
-            date_key = selected_date.strftime('%Y-%m-%d')
-            promo_for_date = st.session_state.get('promo_slots', {}).get(date_key, {})
+            promo_key_detail = f"{selected_room_id}_{selected_date.strftime('%Y-%m-%d')}"
+            promo_for_date = st.session_state.get('promo_slots', {}).get(promo_key_detail, {})
             
             has_open_practice = any(promo_for_date.get(h) == '오픈연습실' for h in selected_times)
             has_time_sale = any(promo_for_date.get(h) == '타임세일' for h in selected_times)
@@ -907,18 +933,19 @@ with tab_customer:
             time_sale_hours = [h for h in selected_times if promo_for_date.get(h) == '타임세일']
             normal_hours = [h for h in selected_times if h not in open_practice_hours and h not in time_sale_hours]
             
+            open_price = OPEN_PRACTICE_FLAT_RATE if open_practice_hours else 0
+            normal_price = len(normal_hours) * hourly_rate
+            sale_price = int(len(time_sale_hours) * hourly_rate * (1 - TIME_SALE_DISCOUNT))
+            total_price = open_price + normal_price + sale_price
+            
+            price_parts = []
             if open_practice_hours:
-                total_price = OPEN_PRACTICE_FLAT_RATE
-                price_desc = f"오픈연습실 정액 ₩{OPEN_PRACTICE_FLAT_RATE:,}"
-            else:
-                normal_price = len(normal_hours) * hourly_rate
-                sale_price = int(len(time_sale_hours) * hourly_rate * (1 - TIME_SALE_DISCOUNT))
-                total_price = normal_price + sale_price
-                
-                if time_sale_hours:
-                    price_desc = f"일반 {len(normal_hours)}시간 + 세일 {len(time_sale_hours)}시간 (30% 할인)"
-                else:
-                    price_desc = f"시간당 ₩{hourly_rate:,}"
+                price_parts.append(f"오픈연습실 ₩{OPEN_PRACTICE_FLAT_RATE:,}")
+            if normal_hours:
+                price_parts.append(f"일반 {len(normal_hours)}시간 ₩{normal_price:,}")
+            if time_sale_hours:
+                price_parts.append(f"세일 {len(time_sale_hours)}시간 ₩{sale_price:,} (30%↓)")
+            price_desc = " + ".join(price_parts) if price_parts else f"시간당 ₩{hourly_rate:,}"
             
             time_ranges = []
             for h in selected_times:
@@ -1061,7 +1088,7 @@ with tab_business:
             analyze_utilization(predictor)
         
         with biz_tab2:
-            render_promotion_management(predictor)
+            render_promotion_management()
 
 st.divider()
 st.caption("🎵 연습실 예약 마감 위험도 예측 PoC (2026) | ML 기반 예측 | SpaceCloud 참고")

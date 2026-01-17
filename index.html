@@ -743,6 +743,14 @@
                     <h2>🏷️ 저수요 시간대 프로모션 관리</h2>
                     <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 16px;">
                         <div>
+                            <label for="promoRoom">연습실 선택:</label><br>
+                            <select id="promoRoom" class="date-picker" style="width: auto;" onchange="analyzePromoSlots()">
+                                <option value="A">A룸 (소형) - 1~3인</option>
+                                <option value="B">B룸 (중형) - 3~5인</option>
+                                <option value="C">C룸 (대형) - 5~8인</option>
+                            </select>
+                        </div>
+                        <div>
                             <label for="promoDate">분석할 날짜:</label><br>
                             <input type="date" id="promoDate" class="date-picker" onchange="analyzePromoSlots()">
                         </div>
@@ -759,7 +767,7 @@
                         <div id="promoInfo"></div>
                         <div id="promoSlots" class="promo-slots"></div>
                         <div class="divider"></div>
-                        <h3>프로모션 요약</h3>
+                        <h3 id="promoSummaryTitle">프로모션 요약</h3>
                         <div class="promo-summary">
                             <div class="promo-summary-card open-practice">
                                 <h4 style="color: #2196F3; margin-bottom: 8px;">🎸 오픈연습실</h4>
@@ -1317,19 +1325,28 @@
                         </div>
                     `;
                 } else {
-                    // 프로모션 상태 확인
-                    const selectedDateStr = document.getElementById('datePicker').value;
-                    const promoStatus = (promoSlotStatus[selectedDateStr] && promoSlotStatus[selectedDateStr][hour]) || '일반';
+                    const promoKey = `${selectedRoomId}_${selectedDateStr}`;
+                    const promoStatus = (promoSlotStatus[promoKey] && promoSlotStatus[promoKey][hour]) || '일반';
                     let promoEmoji = '';
-                    if (promoStatus === '오픈연습실') promoEmoji = '🎸';
-                    else if (promoStatus === '타임세일') promoEmoji = '💰';
+                    let promoLabel = '';
+                    let promoStyle = '';
+                    if (promoStatus === '오픈연습실') {
+                        promoEmoji = '🎸';
+                        promoLabel = '오픈';
+                        promoStyle = 'background: #e3f2fd; border: 2px solid #2196F3;';
+                    } else if (promoStatus === '타임세일') {
+                        promoEmoji = '💰';
+                        promoLabel = '세일';
+                        promoStyle = 'background: #fff3e0; border: 2px solid #FF9800;';
+                    }
                     
                     const displayEmoji = promoEmoji || risk.emoji;
+                    const displayLabel = promoLabel || risk.level;
                     
                     html += `
-                        <div class="time-slot ${risk.class} ${selected}" onclick="toggleTimeSlot(${hour})">
-                            <div class="time-slot-time">${isSelected ? '✅ ' : ''}${hour}:00</div>
-                            <div class="time-slot-risk">${displayEmoji} ${promoEmoji ? (promoStatus === '오픈연습실' ? '오픈' : '세일') : risk.level}</div>
+                        <div class="time-slot ${risk.class} ${selected}" onclick="toggleTimeSlot(${hour})" style="${promoStyle}">
+                            <div class="time-slot-time" style="${promoEmoji ? 'font-weight: bold;' : ''}">${isSelected ? '✅ ' : ''}${promoEmoji ? promoEmoji + ' ' + promoLabel : ''}</div>
+                            <div class="time-slot-risk">${promoEmoji ? '' : displayEmoji + ' '}${hour}:00</div>
                             <div style="font-size: 0.8rem; margin-top: 4px;">${prob.toFixed(0)}%</div>
                         </div>
                     `;
@@ -1382,27 +1399,29 @@
             const hourlyRate = selectedRoom.hourlyRate;
             
             const selectedDateStr = document.getElementById('datePicker').value;
-            const promoForDate = promoSlotStatus[selectedDateStr] || {};
+            const promoKey = `${selectedRoomId}_${selectedDateStr}`;
+            const promoForDate = promoSlotStatus[promoKey] || {};
             
             const openPracticeHours = selectedTimeSlots.filter(h => promoForDate[h] === '오픈연습실');
             const timeSaleHours = selectedTimeSlots.filter(h => promoForDate[h] === '타임세일');
             const normalHours = selectedTimeSlots.filter(h => !openPracticeHours.includes(h) && !timeSaleHours.includes(h));
             
-            let totalPrice, priceDesc;
+            const openPrice = openPracticeHours.length > 0 ? OPEN_PRACTICE_FLAT_RATE : 0;
+            const normalPrice = normalHours.length * hourlyRate;
+            const salePrice = Math.floor(timeSaleHours.length * hourlyRate * (1 - TIME_SALE_DISCOUNT));
+            const totalPrice = openPrice + normalPrice + salePrice;
+            
+            let priceParts = [];
             if (openPracticeHours.length > 0) {
-                totalPrice = OPEN_PRACTICE_FLAT_RATE;
-                priceDesc = `오픈연습실 정액 ₩${OPEN_PRACTICE_FLAT_RATE.toLocaleString()}`;
-            } else {
-                const normalPrice = normalHours.length * hourlyRate;
-                const salePrice = Math.floor(timeSaleHours.length * hourlyRate * (1 - TIME_SALE_DISCOUNT));
-                totalPrice = normalPrice + salePrice;
-                
-                if (timeSaleHours.length > 0) {
-                    priceDesc = `일반 ${normalHours.length}시간 + 세일 ${timeSaleHours.length}시간 (30% 할인)`;
-                } else {
-                    priceDesc = `시간당 ₩${hourlyRate.toLocaleString()}`;
-                }
+                priceParts.push(`오픈연습실 ₩${OPEN_PRACTICE_FLAT_RATE.toLocaleString()}`);
             }
+            if (normalHours.length > 0) {
+                priceParts.push(`일반 ${normalHours.length}시간 ₩${normalPrice.toLocaleString()}`);
+            }
+            if (timeSaleHours.length > 0) {
+                priceParts.push(`세일 ${timeSaleHours.length}시간 ₩${salePrice.toLocaleString()} (30%↓)`);
+            }
+            const priceDesc = priceParts.length > 0 ? priceParts.join(' + ') : `시간당 ₩${hourlyRate.toLocaleString()}`;
             
             const timeRanges = selectedTimeSlots.map(h => `${h}:00~${h+1}:00`).join(', ');
             
@@ -1495,22 +1514,23 @@
             const hourlyRate = selectedRoom.hourlyRate;
             
             const selectedDateStr = document.getElementById('datePicker').value;
-            const promoForDate = promoSlotStatus[selectedDateStr] || {};
+            const promoKey = `${selectedRoomId}_${selectedDateStr}`;
+            const promoForDate = promoSlotStatus[promoKey] || {};
             
             const openPracticeHours = selectedTimeSlots.filter(h => promoForDate[h] === '오픈연습실');
             const timeSaleHours = selectedTimeSlots.filter(h => promoForDate[h] === '타임세일');
             const normalHours = selectedTimeSlots.filter(h => !openPracticeHours.includes(h) && !timeSaleHours.includes(h));
             
-            let totalPrice, priceDesc;
-            if (openPracticeHours.length > 0) {
-                totalPrice = OPEN_PRACTICE_FLAT_RATE;
-                priceDesc = `오픈연습실 정액`;
-            } else {
-                const normalPrice = normalHours.length * hourlyRate;
-                const salePrice = Math.floor(timeSaleHours.length * hourlyRate * (1 - TIME_SALE_DISCOUNT));
-                totalPrice = normalPrice + salePrice;
-                priceDesc = timeSaleHours.length > 0 ? `30% 할인 적용` : '';
-            }
+            const openPrice = openPracticeHours.length > 0 ? OPEN_PRACTICE_FLAT_RATE : 0;
+            const normalPrice = normalHours.length * hourlyRate;
+            const salePrice = Math.floor(timeSaleHours.length * hourlyRate * (1 - TIME_SALE_DISCOUNT));
+            const totalPrice = openPrice + normalPrice + salePrice;
+            
+            let priceParts = [];
+            if (openPracticeHours.length > 0) priceParts.push(`오픈연습실 ₩${OPEN_PRACTICE_FLAT_RATE.toLocaleString()}`);
+            if (normalHours.length > 0) priceParts.push(`일반 ${normalHours.length}시간 ₩${normalPrice.toLocaleString()}`);
+            if (timeSaleHours.length > 0) priceParts.push(`세일 ${timeSaleHours.length}시간 ₩${salePrice.toLocaleString()} (30%↓)`);
+            const priceDesc = priceParts.join(' + ');
             
             const timeRanges = selectedTimeSlots.map(h => `${h}:00~${h+1}:00`).join(', ');
             
@@ -1753,7 +1773,10 @@
         }
         
         function analyzePromoSlots() {
-            if (!modelWeights) return;
+            const promoRoomId = document.getElementById('promoRoom')?.value || selectedRoomId;
+            const promoModelWeights = roomModelWeights[promoRoomId] || modelWeights;
+            
+            if (!promoModelWeights) return;
             
             const promoDateStr = document.getElementById('promoDate').value;
             if (!promoDateStr) return;
@@ -1761,22 +1784,22 @@
             const threshold = parseInt(document.getElementById('promoThreshold').value);
             document.getElementById('thresholdValue').textContent = threshold + '%';
             
-            if (!promoSlotStatus[promoDateStr]) {
-                promoSlotStatus[promoDateStr] = {};
+            const promoKey = `${promoRoomId}_${promoDateStr}`;
+            
+            if (!promoSlotStatus[promoKey]) {
+                promoSlotStatus[promoKey] = {};
             }
             
-            // 해당 날짜의 마감(예약완료) 시간대 확인
-            const promoCacheKey = `${selectedRoomId}_${promoDateStr}`;
+            const promoCacheKey = promoKey;
             let bookedForPromoDate = bookedSlotsCache[promoCacheKey];
             if (!bookedForPromoDate) {
-                // 캐시에 없으면 계산
                 const promoDate = new Date(promoDateStr);
-                const dateSeed = promoDate.getFullYear() * 10000 + (promoDate.getMonth() + 1) * 100 + promoDate.getDate();
+                const dateSeed = promoDate.getFullYear() * 10000 + (promoDate.getMonth() + 1) * 100 + promoDate.getDate() + promoRoomId.charCodeAt(0);
                 const promoPeriodInfo = getPeriodInfo(promoDateStr);
                 bookedForPromoDate = new Set();
                 
                 for (const hour of TIME_SLOTS) {
-                    const result = predictWithModel(promoDateStr, hour, modelWeights);
+                    const result = predictWithModel(promoDateStr, hour, promoModelWeights);
                     let closeChance = (result.probability / 100) * 0.4;
                     if (promoPeriodInfo.isPerf) closeChance *= 1.5;
                     if (promoPeriodInfo.isHoliday) closeChance *= 1.3;
@@ -1795,12 +1818,11 @@
             let bookedExcludedCount = 0;
             
             for (const hour of TIME_SLOTS) {
-                // 이미 예약된 시간대는 프로모션 제외
                 if (bookedForPromoDate.has(hour)) {
                     bookedExcludedCount++;
                     continue;
                 }
-                const result = predictWithModel(promoDateStr, hour, modelWeights);
+                const result = predictWithModel(promoDateStr, hour, promoModelWeights);
                 if (result.probability < threshold) {
                     lowDemandSlots.push({ hour, prob: result.probability });
                 }
@@ -1828,14 +1850,14 @@
             
             let slotsHtml = '';
             for (const slot of lowDemandSlots) {
-                const currentStatus = promoSlotStatus[promoDateStr][slot.hour] || '일반';
+                const currentStatus = promoSlotStatus[promoKey][slot.hour] || '일반';
                 const slotClass = currentStatus === '오픈연습실' ? 'open-practice' : currentStatus === '타임세일' ? 'time-sale' : '';
                 
                 slotsHtml += `
                     <div class="promo-slot ${slotClass}">
                         <strong>${slot.hour}:00</strong><br>
                         <span style="color: #666; font-size: 0.8rem;">수요: ${slot.prob.toFixed(0)}%</span>
-                        <select class="promo-select" onchange="updatePromoSlot('${promoDateStr}', ${slot.hour}, this.value)">
+                        <select class="promo-select" onchange="updatePromoSlot('${promoKey}', ${slot.hour}, this.value)">
                             <option value="일반" ${currentStatus === '일반' ? 'selected' : ''}>일반</option>
                             <option value="오픈연습실" ${currentStatus === '오픈연습실' ? 'selected' : ''}>오픈연습실</option>
                             <option value="타임세일" ${currentStatus === '타임세일' ? 'selected' : ''}>타임세일</option>
@@ -1845,19 +1867,23 @@
             }
             
             document.getElementById('promoSlots').innerHTML = slotsHtml;
-            updatePromoSummary(promoDateStr);
+            updatePromoSummary(promoKey);
         }
         
-        function updatePromoSlot(dateStr, hour, status) {
-            if (!promoSlotStatus[dateStr]) promoSlotStatus[dateStr] = {};
-            promoSlotStatus[dateStr][hour] = status;
+        function updatePromoSlot(promoKey, hour, status) {
+            if (!promoSlotStatus[promoKey]) promoSlotStatus[promoKey] = {};
+            promoSlotStatus[promoKey][hour] = status;
             analyzePromoSlots();
         }
         
-        function updatePromoSummary(dateStr) {
-            const slots = promoSlotStatus[dateStr] || {};
+        function updatePromoSummary(promoKey) {
+            const slots = promoSlotStatus[promoKey] || {};
             const openPractice = Object.entries(slots).filter(([h, s]) => s === '오픈연습실').map(([h]) => parseInt(h)).sort((a,b) => a-b);
             const timeSale = Object.entries(slots).filter(([h, s]) => s === '타임세일').map(([h]) => parseInt(h)).sort((a,b) => a-b);
+            
+            const promoRoomId = document.getElementById('promoRoom')?.value || 'A';
+            const roomName = ROOMS[promoRoomId].name;
+            document.getElementById('promoSummaryTitle').textContent = `${roomName} 프로모션 요약`;
             
             document.getElementById('openPracticeCount').textContent = `${openPractice.length}개 시간대`;
             document.getElementById('openPracticeSlots').innerHTML = openPractice.length > 0 ? openPractice.map(h => `${h}:00`).join(', ') : '';
