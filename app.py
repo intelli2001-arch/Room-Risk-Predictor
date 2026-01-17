@@ -23,6 +23,13 @@ WEEKDAY_NAMES = {
 }
 
 TIME_SLOTS = list(range(9, 23))
+ROOMS = {
+    'A': {'name': 'A룸 (소형)', 'capacity': '1~3인', 'hourly_rate': 6000},
+    'B': {'name': 'B룸 (중형)', 'capacity': '3~5인', 'hourly_rate': 6000},
+    'C': {'name': 'C룸 (대형)', 'capacity': '5~8인', 'hourly_rate': 6000}
+}
+OPEN_PRACTICE_FLAT_RATE = 5000
+TIME_SALE_DISCOUNT = 0.30
 
 HOLIDAYS_2026 = [
     '2026-01-01', '2026-03-01', '2026-03-02', '2026-05-05',
@@ -359,7 +366,14 @@ def render_model_training(key_prefix=""):
             st.info(f"✅ {st.session_state['data_source']}로 학습 완료 ({len(st.session_state['training_data'])}개 레코드)")
 
 def analyze_utilization(predictor):
-    st.subheader("📊 공간 활용률 분석")
+    st.subheader("📊 공간 활용률 분석 (과거 데이터 기반)")
+    
+    st.caption("📈 과거 예약 데이터를 기반으로 분석한 실제 수요 패턴입니다.")
+    
+    training_data = st.session_state.get('training_data')
+    if training_data is None:
+        st.warning("학습 데이터가 없습니다.")
+        return
     
     analysis_type = st.selectbox(
         "분석 유형 선택",
@@ -369,18 +383,10 @@ def analyze_utilization(predictor):
     results = []
     
     if analysis_type == "월별 평균 수요":
+        monthly_data = training_data.groupby('월')['예약 여부'].mean() * 100
         for month in range(1, 13):
-            probs = []
-            for day in [10, 15, 20]:
-                for hour in TIME_SLOTS:
-                    try:
-                        test_date = datetime(2026, month, day).date()
-                        prob, _ = predictor.predict(test_date, hour, lead_time_hours=72)
-                        probs.append(prob)
-                    except:
-                        pass
-            if probs:
-                results.append({'기간': f"{month}월", '평균 수요(%)': np.mean(probs)})
+            if month in monthly_data.index:
+                results.append({'기간': f"{month}월", '평균 수요(%)': monthly_data[month]})
         
         df = pd.DataFrame(results)
         fig = go.Figure(data=[
@@ -388,83 +394,60 @@ def analyze_utilization(predictor):
                    marker_color=['#FF4B4B' if v > 60 else '#FFA500' if v > 40 else '#FFD700' if v > 25 else '#00CC66' 
                                  for v in df['평균 수요(%)']])
         ])
-        fig.update_layout(title="월별 평균 예약 수요", yaxis_title="수요 (%)", xaxis_title="월")
+        fig.update_layout(title="월별 평균 예약 수요 (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="월")
         st.plotly_chart(fig, use_container_width=True)
         
     elif analysis_type == "요일별 평균 수요":
-        weekday_probs = {i: [] for i in range(7)}
-        for month in [3, 6, 9, 11]:
-            for day in range(1, 29):
-                try:
-                    test_date = datetime(2026, month, day).date()
-                    for hour in TIME_SLOTS:
-                        prob, _ = predictor.predict(test_date, hour, lead_time_hours=72)
-                        weekday_probs[test_date.weekday()].append(prob)
-                except:
-                    pass
-        
+        weekday_data = training_data.groupby('요일')['예약 여부'].mean() * 100
         for wd in range(7):
-            if weekday_probs[wd]:
-                results.append({'요일': WEEKDAY_NAMES[wd], '평균 수요(%)': np.mean(weekday_probs[wd])})
+            if wd in weekday_data.index:
+                results.append({'요일': WEEKDAY_NAMES[wd], '평균 수요(%)': weekday_data[wd]})
         
         df = pd.DataFrame(results)
         colors = ['#FF4B4B' if v > 60 else '#FFA500' if v > 40 else '#FFD700' if v > 25 else '#00CC66' 
                   for v in df['평균 수요(%)']]
         fig = go.Figure(data=[go.Bar(x=df['요일'], y=df['평균 수요(%)'], marker_color=colors)])
-        fig.update_layout(title="요일별 평균 예약 수요", yaxis_title="수요 (%)", xaxis_title="요일")
+        fig.update_layout(title="요일별 평균 예약 수요 (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="요일")
         st.plotly_chart(fig, use_container_width=True)
         
     elif analysis_type == "시간대별 평균 수요":
-        hour_probs = {h: [] for h in TIME_SLOTS}
-        for month in [3, 6, 9, 11]:
-            for day in [10, 15, 20]:
-                try:
-                    test_date = datetime(2026, month, day).date()
-                    for hour in TIME_SLOTS:
-                        prob, _ = predictor.predict(test_date, hour, lead_time_hours=72)
-                        hour_probs[hour].append(prob)
-                except:
-                    pass
-        
+        hourly_data = training_data.groupby('시간')['예약 여부'].mean() * 100
         for hour in TIME_SLOTS:
-            if hour_probs[hour]:
-                results.append({'시간': f"{hour}:00", '평균 수요(%)': np.mean(hour_probs[hour])})
+            if hour in hourly_data.index:
+                results.append({'시간': f"{hour}:00", '평균 수요(%)': hourly_data[hour]})
         
         df = pd.DataFrame(results)
         colors = ['#FF4B4B' if v > 60 else '#FFA500' if v > 40 else '#FFD700' if v > 25 else '#00CC66' 
                   for v in df['평균 수요(%)']]
         fig = go.Figure(data=[go.Bar(x=df['시간'], y=df['평균 수요(%)'], marker_color=colors)])
-        fig.update_layout(title="시간대별 평균 예약 수요", yaxis_title="수요 (%)", xaxis_title="시간")
+        fig.update_layout(title="시간대별 평균 예약 수요 (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="시간")
         st.plotly_chart(fig, use_container_width=True)
         
     elif analysis_type == "기간 특성별 수요":
-        period_probs = {'평일': [], '휴일/주말': [], '시험기간': [], '공연시즌': []}
-        for month in range(1, 13):
-            for day in range(1, 29):
-                try:
-                    test_date = datetime(2026, month, day).date()
-                    period = get_period_info(test_date)
-                    for hour in TIME_SLOTS:
-                        prob, _ = predictor.predict(test_date, hour, lead_time_hours=72)
-                        if period['is_exam']:
-                            period_probs['시험기간'].append(prob)
-                        elif period['is_perf']:
-                            period_probs['공연시즌'].append(prob)
-                        elif period['is_holiday']:
-                            period_probs['휴일/주말'].append(prob)
-                        else:
-                            period_probs['평일'].append(prob)
-                except:
-                    pass
+        period_results = {}
         
-        for period_name, probs in period_probs.items():
-            if probs:
-                results.append({'기간': period_name, '평균 수요(%)': np.mean(probs)})
+        if '휴일 여부' in training_data.columns:
+            holiday_data = training_data[training_data['휴일 여부'] == 1]['예약 여부'].mean() * 100
+            normal_data = training_data[training_data['휴일 여부'] == 0]['예약 여부'].mean() * 100
+            period_results['평일'] = normal_data
+            period_results['휴일/주말'] = holiday_data
+        
+        if '시험기간 여부' in training_data.columns:
+            exam_data = training_data[training_data['시험기간 여부'] == 1]['예약 여부'].mean() * 100
+            period_results['시험기간'] = exam_data
+        
+        if '공연시즌 여부' in training_data.columns:
+            perf_data = training_data[training_data['공연시즌 여부'] == 1]['예약 여부'].mean() * 100
+            period_results['공연시즌'] = perf_data
+        
+        for period_name, avg in period_results.items():
+            if not pd.isna(avg):
+                results.append({'기간': period_name, '평균 수요(%)': avg})
         
         df = pd.DataFrame(results)
-        colors = ['#00CC66', '#FFA500', '#3498db', '#FF4B4B']
+        colors = ['#00CC66', '#FFA500', '#3498db', '#FF4B4B'][:len(results)]
         fig = go.Figure(data=[go.Bar(x=df['기간'], y=df['평균 수요(%)'], marker_color=colors)])
-        fig.update_layout(title="기간 특성별 평균 예약 수요", yaxis_title="수요 (%)", xaxis_title="기간")
+        fig.update_layout(title="기간 특성별 평균 예약 수요 (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="기간")
         st.plotly_chart(fig, use_container_width=True)
     
     st.caption("💡 수요가 낮은 시간대/기간을 타임세일이나 오픈연습실로 전환하면 수익을 높일 수 있습니다.")
@@ -643,15 +626,26 @@ with tab_customer:
     
     st.divider()
     
-    st.subheader("2. 2026년 날짜 선택")
+    st.subheader("2. 연습실 및 날짜 선택")
     
     if 'predictor' not in st.session_state:
         st.warning("⚠️ 먼저 '학습 데이터 생성' 버튼을 클릭해주세요.")
     else:
-        col_date1, col_date2 = st.columns([1, 2])
+        col_room, col_date1, col_date2 = st.columns([1, 1, 2])
         
         today = datetime.now().date()
         min_date = max(today, datetime(2026, 1, 1).date())
+        
+        with col_room:
+            room_options = [f"{room_id}: {info['name']} ({info['capacity']})" for room_id, info in ROOMS.items()]
+            selected_room_display = st.selectbox(
+                "연습실 선택",
+                room_options,
+                key="room_select"
+            )
+            selected_room_id = selected_room_display.split(':')[0]
+            selected_room = ROOMS[selected_room_id]
+            st.caption(f"💰 시간당 ₩{selected_room['hourly_rate']:,}")
         
         with col_date1:
             today = datetime.now().date()
@@ -835,9 +829,31 @@ with tab_customer:
                 period_text_short.append("공연시즌")
             period_str = ", ".join(period_text_short) if period_text_short else "평일"
             
-            hourly_rate = 110000
+            hourly_rate = selected_room['hourly_rate']
             total_hours = len(selected_times)
-            total_price = hourly_rate * total_hours
+            
+            date_key = selected_date.strftime('%Y-%m-%d')
+            promo_for_date = st.session_state.get('promo_slots', {}).get(date_key, {})
+            
+            has_open_practice = any(promo_for_date.get(h) == '오픈연습실' for h in selected_times)
+            has_time_sale = any(promo_for_date.get(h) == '타임세일' for h in selected_times)
+            
+            open_practice_hours = [h for h in selected_times if promo_for_date.get(h) == '오픈연습실']
+            time_sale_hours = [h for h in selected_times if promo_for_date.get(h) == '타임세일']
+            normal_hours = [h for h in selected_times if h not in open_practice_hours and h not in time_sale_hours]
+            
+            if open_practice_hours:
+                total_price = OPEN_PRACTICE_FLAT_RATE
+                price_desc = f"오픈연습실 정액 ₩{OPEN_PRACTICE_FLAT_RATE:,}"
+            else:
+                normal_price = len(normal_hours) * hourly_rate
+                sale_price = int(len(time_sale_hours) * hourly_rate * (1 - TIME_SALE_DISCOUNT))
+                total_price = normal_price + sale_price
+                
+                if time_sale_hours:
+                    price_desc = f"일반 {len(normal_hours)}시간 + 세일 {len(time_sale_hours)}시간 (30% 할인)"
+                else:
+                    price_desc = f"시간당 ₩{hourly_rate:,}"
             
             time_ranges = []
             for h in selected_times:
@@ -870,6 +886,7 @@ with tab_customer:
                 ">
                     <h3 style="margin: 0; color: #333;">📍 예약 정보 (ML 예측)</h3>
                     <p style="font-size: 16px; margin-top: 10px;">
+                        <strong>연습실:</strong> {selected_room['name']} ({selected_room['capacity']})<br>
                         <strong>날짜:</strong> {selected_date.strftime('%Y년 %m월 %d일')} ({weekday_name})<br>
                         <strong>시간:</strong> {time_str} ({total_hours}시간)<br>
                         <strong>기간 특성:</strong> {period_str}<br>
@@ -895,9 +912,10 @@ with tab_customer:
                     border-radius: 10px;
                     text-align: center;
                 ">
-                    <p style="margin: 0; color: #666;">{total_hours}시간 기준</p>
+                    <p style="margin: 0; color: #666;">{selected_room['name']}</p>
+                    <p style="margin: 5px 0; color: #666;">{total_hours}시간 기준</p>
                     <h2 style="margin: 10px 0; color: #7B68EE;">₩{total_price:,}</h2>
-                    <p style="margin: 0; font-size: 12px; color: #999;">시간당 ₩{hourly_rate:,}</p>
+                    <p style="margin: 0; font-size: 12px; color: #999;">{price_desc}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -936,12 +954,14 @@ with tab_customer:
                     </p>
                     <hr style="border-color: rgba(255,255,255,0.3); margin: 20px 0;">
                     <p style="margin: 0;">
+                        <strong>연습실:</strong> {room_name}<br>
                         <strong>예약 정보:</strong> {date} ({weekday})<br>
                         <strong>시간:</strong> {time_str}<br>
                         <strong>결제 금액:</strong> ₩{price:,}
                     </p>
                 </div>
                 """.format(
+                    room_name=selected_room['name'],
                     date=selected_date.strftime('%Y.%m.%d'),
                     weekday=weekday_name,
                     time_str=time_str,

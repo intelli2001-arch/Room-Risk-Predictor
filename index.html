@@ -624,14 +624,26 @@
         </div>
         
         <div class="section" id="dateSection">
-            <h2>2. 2026년 날짜 선택</h2>
+            <h2>2. 연습실 및 날짜 선택</h2>
             <div id="dateWarning" class="alert alert-warning">
                 ⚠️ 먼저 'ML 모델 학습' 버튼을 클릭해주세요.
             </div>
             <div id="datePickerSection" class="hidden">
-                <label for="datePicker">예약 희망 날짜를 선택하세요:</label>
-                <br>
-                <input type="date" id="datePicker" class="date-picker" onchange="onDateChange()">
+                <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 16px;">
+                    <div>
+                        <label for="roomSelect">연습실 선택:</label><br>
+                        <select id="roomSelect" class="date-picker" style="width: auto;" onchange="onRoomChange()">
+                            <option value="A">A: A룸 (소형) - 1~3인</option>
+                            <option value="B">B: B룸 (중형) - 3~5인</option>
+                            <option value="C">C: C룸 (대형) - 5~8인</option>
+                        </select>
+                        <div style="font-size: 0.9rem; color: #666; margin-top: 4px;">💰 시간당 ₩<span id="roomPrice">6,000</span></div>
+                    </div>
+                    <div>
+                        <label for="datePicker">예약 희망 날짜:</label><br>
+                        <input type="date" id="datePicker" class="date-picker" onchange="onDateChange()">
+                    </div>
+                </div>
                 <div id="dateInfo" class="date-info hidden"></div>
                 <div id="periodAlerts"></div>
             </div>
@@ -700,7 +712,8 @@
                 
                 <!-- 공간 활용률 분석 -->
                 <div id="analysisContent" class="section">
-                    <h2>📊 공간 활용률 분석</h2>
+                    <h2>📊 공간 활용률 분석 (과거 데이터 기반)</h2>
+                    <p style="color: #666; font-size: 0.9rem; margin-bottom: 12px;">📈 과거 예약 데이터를 기반으로 분석한 실제 수요 패턴입니다.</p>
                     <div style="margin-bottom: 16px;">
                         <label for="analysisType">분석 유형 선택:</label>
                         <select id="analysisType" class="date-picker" style="width: auto;" onchange="runAnalysis()">
@@ -770,6 +783,14 @@
         const WEEKDAY_NAMES = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
         const WEEKDAY_NAMES_PY = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
         const TIME_SLOTS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+        const ROOMS = {
+            'A': { name: 'A룸 (소형)', capacity: '1~3인', hourlyRate: 6000 },
+            'B': { name: 'B룸 (중형)', capacity: '3~5인', hourlyRate: 6000 },
+            'C': { name: 'C룸 (대형)', capacity: '5~8인', hourlyRate: 6000 }
+        };
+        const OPEN_PRACTICE_FLAT_RATE = 5000;
+        const TIME_SALE_DISCOUNT = 0.30;
+        let selectedRoomId = 'A';
         
         const HOLIDAYS_2026 = [
             '2026-01-01', '2026-03-01', '2026-03-02', '2026-05-05',
@@ -1320,9 +1341,32 @@
             document.getElementById('bookingWarning').classList.add('hidden');
             document.getElementById('bookingSummary').classList.remove('hidden');
             
+            const selectedRoom = ROOMS[selectedRoomId];
             const totalHours = selectedTimeSlots.length;
-            const hourlyRate = 110000;
-            const totalPrice = hourlyRate * totalHours;
+            const hourlyRate = selectedRoom.hourlyRate;
+            
+            const selectedDateStr = document.getElementById('datePicker').value;
+            const promoForDate = promoSlotStatus[selectedDateStr] || {};
+            
+            const openPracticeHours = selectedTimeSlots.filter(h => promoForDate[h] === '오픈연습실');
+            const timeSaleHours = selectedTimeSlots.filter(h => promoForDate[h] === '타임세일');
+            const normalHours = selectedTimeSlots.filter(h => !openPracticeHours.includes(h) && !timeSaleHours.includes(h));
+            
+            let totalPrice, priceDesc;
+            if (openPracticeHours.length > 0) {
+                totalPrice = OPEN_PRACTICE_FLAT_RATE;
+                priceDesc = `오픈연습실 정액 ₩${OPEN_PRACTICE_FLAT_RATE.toLocaleString()}`;
+            } else {
+                const normalPrice = normalHours.length * hourlyRate;
+                const salePrice = Math.floor(timeSaleHours.length * hourlyRate * (1 - TIME_SALE_DISCOUNT));
+                totalPrice = normalPrice + salePrice;
+                
+                if (timeSaleHours.length > 0) {
+                    priceDesc = `일반 ${normalHours.length}시간 + 세일 ${timeSaleHours.length}시간 (30% 할인)`;
+                } else {
+                    priceDesc = `시간당 ₩${hourlyRate.toLocaleString()}`;
+                }
+            }
             
             const timeRanges = selectedTimeSlots.map(h => `${h}:00~${h+1}:00`).join(', ');
             
@@ -1345,10 +1389,16 @@
             let slotDetails = selectedTimeSlots.map(h => {
                 const info = riskData[h];
                 const risk = getRiskLevel(info.probability);
-                return `<div style="font-size: 0.9rem; margin: 2px 0;">${risk.emoji} ${h}:00~${h+1}:00 (${info.probability.toFixed(0)}%)</div>`;
+                const promoStatus = promoForDate[h];
+                const promoIcon = promoStatus === '오픈연습실' ? '🎸' : promoStatus === '타임세일' ? '💰' : risk.emoji;
+                return `<div style="font-size: 0.9rem; margin: 2px 0;">${promoIcon} ${h}:00~${h+1}:00 (${info.probability.toFixed(0)}%)</div>`;
             }).join('');
             
             const bookingHtml = `
+                <div class="booking-row">
+                    <span>연습실</span>
+                    <strong>${selectedRoom.name} (${selectedRoom.capacity})</strong>
+                </div>
                 <div class="booking-row">
                     <span>예약 날짜</span>
                     <strong>${selectedDate.getFullYear()}년 ${selectedDate.getMonth() + 1}월 ${selectedDate.getDate()}일 (${WEEKDAY_NAMES[weekday]})</strong>
@@ -1375,7 +1425,8 @@
                 </div>
                 <div class="booking-row">
                     <span>예상 이용료</span>
-                    <strong style="color: #7B68EE;">₩${totalPrice.toLocaleString()} (${totalHours}시간)</strong>
+                    <strong style="color: #7B68EE;">₩${totalPrice.toLocaleString()}</strong>
+                    <span style="font-size: 0.85rem; color: #999;">(${priceDesc})</span>
                 </div>
                 <div style="margin-top: 10px;">
                     <button onclick="clearSelection()" style="background: #f0f0f0; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer;">선택 초기화</button>
@@ -1386,12 +1437,38 @@
             document.getElementById('bookingBtn').textContent = `🎯 ${totalHours}시간 예약하기`;
         }
         
+        function onRoomChange() {
+            selectedRoomId = document.getElementById('roomSelect').value;
+            const room = ROOMS[selectedRoomId];
+            document.getElementById('roomPrice').textContent = room.hourlyRate.toLocaleString();
+            updateBookingSection();
+        }
+        
         function processBooking() {
             if (selectedTimeSlots.length === 0) return;
             
+            const selectedRoom = ROOMS[selectedRoomId];
             const totalHours = selectedTimeSlots.length;
-            const hourlyRate = 110000;
-            const totalPrice = hourlyRate * totalHours;
+            const hourlyRate = selectedRoom.hourlyRate;
+            
+            const selectedDateStr = document.getElementById('datePicker').value;
+            const promoForDate = promoSlotStatus[selectedDateStr] || {};
+            
+            const openPracticeHours = selectedTimeSlots.filter(h => promoForDate[h] === '오픈연습실');
+            const timeSaleHours = selectedTimeSlots.filter(h => promoForDate[h] === '타임세일');
+            const normalHours = selectedTimeSlots.filter(h => !openPracticeHours.includes(h) && !timeSaleHours.includes(h));
+            
+            let totalPrice, priceDesc;
+            if (openPracticeHours.length > 0) {
+                totalPrice = OPEN_PRACTICE_FLAT_RATE;
+                priceDesc = `오픈연습실 정액`;
+            } else {
+                const normalPrice = normalHours.length * hourlyRate;
+                const salePrice = Math.floor(timeSaleHours.length * hourlyRate * (1 - TIME_SALE_DISCOUNT));
+                totalPrice = normalPrice + salePrice;
+                priceDesc = timeSaleHours.length > 0 ? `30% 할인 적용` : '';
+            }
+            
             const timeRanges = selectedTimeSlots.map(h => `${h}:00~${h+1}:00`).join(', ');
             
             const firstHour = selectedTimeSlots[0];
@@ -1406,6 +1483,10 @@
             
             const modalHtml = `
                 <div class="booking-summary" style="text-align: left; margin-top: 20px;">
+                    <div class="booking-row">
+                        <span>연습실</span>
+                        <strong>${selectedRoom.name} (${selectedRoom.capacity})</strong>
+                    </div>
                     <div class="booking-row">
                         <span>예약 날짜</span>
                         <strong>${selectedDate.getFullYear()}년 ${selectedDate.getMonth() + 1}월 ${selectedDate.getDate()}일 (${WEEKDAY_NAMES[weekday]})</strong>
@@ -1425,6 +1506,7 @@
                     <div class="booking-row">
                         <span>결제 금액</span>
                         <strong style="color: #7B68EE; font-size: 1.2rem;">₩${totalPrice.toLocaleString()}</strong>
+                        ${priceDesc ? `<span style="font-size: 0.85rem; color: #999;">(${priceDesc})</span>` : ''}
                     </div>
                 </div>
             `;
@@ -1497,7 +1579,7 @@
         let bookedSlotsCache = {};
         
         function runAnalysis() {
-            if (!modelWeights) return;
+            if (!trainingData || trainingData.length === 0) return;
             
             const analysisType = document.getElementById('analysisType').value;
             let labels = [];
@@ -1512,90 +1594,74 @@
             };
             
             if (analysisType === 'monthly') {
+                const monthlyData = {};
+                trainingData.forEach(row => {
+                    const month = row.month;
+                    if (!monthlyData[month]) monthlyData[month] = { booked: 0, total: 0 };
+                    monthlyData[month].total++;
+                    if (row.booked) monthlyData[month].booked++;
+                });
                 for (let month = 1; month <= 12; month++) {
-                    let probs = [];
-                    for (const day of [10, 15, 20]) {
-                        for (const hour of TIME_SLOTS) {
-                            try {
-                                const dateStr = `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                                const result = predictWithModel(dateStr, hour, modelWeights);
-                                probs.push(result.probability);
-                            } catch (e) {}
-                        }
-                    }
-                    if (probs.length > 0) {
-                        const avg = probs.reduce((a, b) => a + b, 0) / probs.length;
+                    if (monthlyData[month] && monthlyData[month].total > 0) {
+                        const avg = (monthlyData[month].booked / monthlyData[month].total) * 100;
                         labels.push(`${month}월`);
                         values.push(avg);
                         colors.push(getColor(avg));
                     }
                 }
             } else if (analysisType === 'weekday') {
-                const weekdayProbs = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []};
-                for (const month of [3, 6, 9, 11]) {
-                    for (let day = 1; day <= 28; day++) {
-                        try {
-                            const dateStr = `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                            const date = new Date(dateStr);
-                            const weekday = (date.getDay() + 6) % 7;
-                            for (const hour of TIME_SLOTS) {
-                                const result = predictWithModel(dateStr, hour, modelWeights);
-                                weekdayProbs[weekday].push(result.probability);
-                            }
-                        } catch (e) {}
-                    }
-                }
+                const weekdayData = {};
+                trainingData.forEach(row => {
+                    const wd = row.weekday;
+                    if (!weekdayData[wd]) weekdayData[wd] = { booked: 0, total: 0 };
+                    weekdayData[wd].total++;
+                    if (row.booked) weekdayData[wd].booked++;
+                });
                 for (let wd = 0; wd < 7; wd++) {
-                    if (weekdayProbs[wd].length > 0) {
-                        const avg = weekdayProbs[wd].reduce((a, b) => a + b, 0) / weekdayProbs[wd].length;
+                    if (weekdayData[wd] && weekdayData[wd].total > 0) {
+                        const avg = (weekdayData[wd].booked / weekdayData[wd].total) * 100;
                         labels.push(WEEKDAY_NAMES_PY[wd]);
                         values.push(avg);
                         colors.push(getColor(avg));
                     }
                 }
             } else if (analysisType === 'hourly') {
-                const hourProbs = {};
-                TIME_SLOTS.forEach(h => hourProbs[h] = []);
-                for (const month of [3, 6, 9, 11]) {
-                    for (const day of [10, 15, 20]) {
-                        try {
-                            const dateStr = `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                            for (const hour of TIME_SLOTS) {
-                                const result = predictWithModel(dateStr, hour, modelWeights);
-                                hourProbs[hour].push(result.probability);
-                            }
-                        } catch (e) {}
-                    }
-                }
+                const hourData = {};
+                trainingData.forEach(row => {
+                    const hour = row.hour;
+                    if (!hourData[hour]) hourData[hour] = { booked: 0, total: 0 };
+                    hourData[hour].total++;
+                    if (row.booked) hourData[hour].booked++;
+                });
                 for (const hour of TIME_SLOTS) {
-                    if (hourProbs[hour].length > 0) {
-                        const avg = hourProbs[hour].reduce((a, b) => a + b, 0) / hourProbs[hour].length;
+                    if (hourData[hour] && hourData[hour].total > 0) {
+                        const avg = (hourData[hour].booked / hourData[hour].total) * 100;
                         labels.push(`${hour}:00`);
                         values.push(avg);
                         colors.push(getColor(avg));
                     }
                 }
             } else if (analysisType === 'period') {
-                const periodProbs = {'평일': [], '휴일/주말': [], '시험기간': [], '공연시즌': []};
-                for (let month = 1; month <= 12; month++) {
-                    for (let day = 1; day <= 28; day++) {
-                        try {
-                            const dateStr = `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                            const period = getPeriodInfo(dateStr);
-                            for (const hour of TIME_SLOTS) {
-                                const result = predictWithModel(dateStr, hour, modelWeights);
-                                if (period.isExam) periodProbs['시험기간'].push(result.probability);
-                                else if (period.isPerf) periodProbs['공연시즌'].push(result.probability);
-                                else if (period.isHoliday) periodProbs['휴일/주말'].push(result.probability);
-                                else periodProbs['평일'].push(result.probability);
-                            }
-                        } catch (e) {}
+                const periodData = {'평일': {booked: 0, total: 0}, '휴일/주말': {booked: 0, total: 0}, '시험기간': {booked: 0, total: 0}, '공연시즌': {booked: 0, total: 0}};
+                trainingData.forEach(row => {
+                    if (row.isExam) {
+                        periodData['시험기간'].total++;
+                        if (row.booked) periodData['시험기간'].booked++;
+                    } else if (row.isPerf) {
+                        periodData['공연시즌'].total++;
+                        if (row.booked) periodData['공연시즌'].booked++;
+                    } else if (row.isHoliday) {
+                        periodData['휴일/주말'].total++;
+                        if (row.booked) periodData['휴일/주말'].booked++;
+                    } else {
+                        periodData['평일'].total++;
+                        if (row.booked) periodData['평일'].booked++;
                     }
-                }
+                });
                 const periodColors = {'평일': '#00CC66', '휴일/주말': '#FFA500', '시험기간': '#3498db', '공연시즌': '#FF4B4B'};
-                for (const [period, probs] of Object.entries(periodProbs)) {
-                    if (probs.length > 0) {
-                        const avg = probs.reduce((a, b) => a + b, 0) / probs.length;
+                for (const [period, data] of Object.entries(periodData)) {
+                    if (data.total > 0) {
+                        const avg = (data.booked / data.total) * 100;
                         labels.push(period);
                         values.push(avg);
                         colors.push(periodColors[period]);
@@ -1613,10 +1679,10 @@
             };
             
             const titles = {
-                'monthly': '월별 평균 예약 수요',
-                'weekday': '요일별 평균 예약 수요',
-                'hourly': '시간대별 평균 예약 수요',
-                'period': '기간 특성별 평균 예약 수요'
+                'monthly': '월별 평균 예약 수요 (과거 데이터)',
+                'weekday': '요일별 평균 예약 수요 (과거 데이터)',
+                'hourly': '시간대별 평균 예약 수요 (과거 데이터)',
+                'period': '기간 특성별 평균 예약 수요 (과거 데이터)'
             };
             
             const layout = {
