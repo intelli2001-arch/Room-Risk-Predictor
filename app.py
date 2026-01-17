@@ -497,15 +497,47 @@ def render_promotion_management(predictor):
     if promo_key not in st.session_state['promo_slots']:
         st.session_state['promo_slots'][promo_key] = {}
     
+    if 'booked_slots_cache' not in st.session_state:
+        st.session_state['booked_slots_cache'] = {}
+    
+    if promo_key not in st.session_state['booked_slots_cache']:
+        period_info = get_period_info(promo_date)
+        date_seed = promo_date.toordinal()
+        np.random.seed(date_seed)
+        booked_slots = set()
+        for hour in TIME_SLOTS:
+            prob, _ = predictor.predict(promo_date, hour, lead_time_hours=72)
+            close_chance = prob / 100 * 0.4
+            if period_info['is_perf']:
+                close_chance *= 1.5
+            if period_info['is_holiday']:
+                close_chance *= 1.3
+            if period_info['is_exam']:
+                close_chance *= 0.3
+            if 18 <= hour <= 20:
+                close_chance *= 1.4
+            if np.random.random() < close_chance:
+                booked_slots.add(hour)
+        st.session_state['booked_slots_cache'][promo_key] = booked_slots
+    
+    booked_slots = st.session_state['booked_slots_cache'].get(promo_key, set())
+    
     low_demand_slots = []
+    booked_excluded_count = 0
     
     for hour in TIME_SLOTS:
+        if hour in booked_slots:
+            booked_excluded_count += 1
+            continue
         prob, _ = predictor.predict(promo_date, hour, lead_time_hours=72)
         if prob < threshold:
             low_demand_slots.append({'hour': hour, 'prob': prob})
     
+    if booked_excluded_count > 0:
+        st.warning(f"⚠️ {booked_excluded_count}개 시간대가 이미 예약 완료되어 프로모션 전환이 불가합니다.")
+    
     if low_demand_slots:
-        st.info(f"📉 {len(low_demand_slots)}개 저수요 시간대 발견 (수요 {threshold}% 미만)")
+        st.info(f"📉 {len(low_demand_slots)}개 저수요 시간대 발견 (수요 {threshold}% 미만, 예약 가능한 시간대만)")
         
         cols = st.columns(min(len(low_demand_slots), 7))
         
@@ -670,23 +702,33 @@ with tab_customer:
         date_seed = selected_date.toordinal()
         np.random.seed(date_seed)
         
-        booked_slots = set()
-        for hour in TIME_SLOTS:
-            prob, lead_time = predictor.predict(selected_date, hour)
+        if 'booked_slots_cache' not in st.session_state:
+            st.session_state['booked_slots_cache'] = {}
+        
+        booked_cache_key = selected_date.strftime('%Y-%m-%d')
+        
+        if booked_cache_key not in st.session_state['booked_slots_cache']:
+            booked_slots = set()
+            for hour in TIME_SLOTS:
+                prob, lead_time = predictor.predict(selected_date, hour)
+                
+                close_chance = prob / 100 * 0.4
+                if period_info['is_perf']:
+                    close_chance *= 1.5
+                if period_info['is_holiday']:
+                    close_chance *= 1.3
+                if period_info['is_exam']:
+                    close_chance *= 0.3
+                
+                if 18 <= hour <= 20:
+                    close_chance *= 1.4
+                
+                if np.random.random() < close_chance:
+                    booked_slots.add(hour)
             
-            close_chance = prob / 100 * 0.4
-            if period_info['is_perf']:
-                close_chance *= 1.5
-            if period_info['is_holiday']:
-                close_chance *= 1.3
-            if period_info['is_exam']:
-                close_chance *= 0.3
-            
-            if 18 <= hour <= 20:
-                close_chance *= 1.4
-            
-            if np.random.random() < close_chance:
-                booked_slots.add(hour)
+            st.session_state['booked_slots_cache'][booked_cache_key] = booked_slots
+        else:
+            booked_slots = st.session_state['booked_slots_cache'][booked_cache_key]
         
         for hour in TIME_SLOTS:
             prob, lead_time = predictor.predict(selected_date, hour)
@@ -720,6 +762,9 @@ with tab_customer:
         current_hour = now.hour
         is_today = selected_date == now.date()
         
+        date_key = selected_date.strftime('%Y-%m-%d')
+        promo_for_date = st.session_state.get('promo_slots', {}).get(date_key, {})
+        
         cols = st.columns(7)
         for idx, hour in enumerate(TIME_SLOTS):
             col_idx = idx % 7
@@ -728,6 +773,7 @@ with tab_customer:
                 is_past_time = is_today and hour <= current_hour
                 is_booked = risk_info['is_booked']
                 is_selected = hour in selected_times
+                promo_status = promo_for_date.get(hour, '일반')
                 
                 if is_past_time:
                     st.button(
@@ -744,7 +790,13 @@ with tab_customer:
                         disabled=True
                     )
                 else:
-                    button_label = f"{'✅ ' if is_selected else ''}{hour}:00\n{risk_info['emoji']}"
+                    promo_emoji = ""
+                    if promo_status == '오픈연습실':
+                        promo_emoji = "🎸"
+                    elif promo_status == '타임세일':
+                        promo_emoji = "💰"
+                    
+                    button_label = f"{'✅ ' if is_selected else ''}{hour}:00\n{promo_emoji if promo_emoji else risk_info['emoji']}"
                     if st.button(
                         button_label,
                         key=f"time_{hour}",

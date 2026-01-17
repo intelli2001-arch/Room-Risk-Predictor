@@ -1143,6 +1143,9 @@
                 }
             }
             
+            // 마감된 시간대를 캐시에 저장
+            bookedSlotsCache[dateStr] = new Set(bookedSlots);
+            
             // 마감된 시간대가 선택되어 있으면 제거
             selectedTimeSlots = selectedTimeSlots.filter(h => !bookedSlots.has(h));
             
@@ -1257,10 +1260,19 @@
                         </div>
                     `;
                 } else {
+                    // 프로모션 상태 확인
+                    const selectedDateStr = document.getElementById('datePicker').value;
+                    const promoStatus = (promoSlotStatus[selectedDateStr] && promoSlotStatus[selectedDateStr][hour]) || '일반';
+                    let promoEmoji = '';
+                    if (promoStatus === '오픈연습실') promoEmoji = '🎸';
+                    else if (promoStatus === '타임세일') promoEmoji = '💰';
+                    
+                    const displayEmoji = promoEmoji || risk.emoji;
+                    
                     html += `
                         <div class="time-slot ${risk.class} ${selected}" onclick="toggleTimeSlot(${hour})">
                             <div class="time-slot-time">${isSelected ? '✅ ' : ''}${hour}:00</div>
-                            <div class="time-slot-risk">${risk.emoji} ${risk.level}</div>
+                            <div class="time-slot-risk">${displayEmoji} ${promoEmoji ? (promoStatus === '오픈연습실' ? '오픈' : '세일') : risk.level}</div>
                             <div style="font-size: 0.8rem; margin-top: 4px;">${prob.toFixed(0)}%</div>
                         </div>
                     `;
@@ -1482,6 +1494,7 @@
         }
         
         let promoSlotStatus = {};
+        let bookedSlotsCache = {};
         
         function runAnalysis() {
             if (!modelWeights) return;
@@ -1629,26 +1642,65 @@
                 promoSlotStatus[promoDateStr] = {};
             }
             
+            // 해당 날짜의 마감(예약완료) 시간대 확인
+            let bookedForPromoDate = bookedSlotsCache[promoDateStr];
+            if (!bookedForPromoDate) {
+                // 캐시에 없으면 계산
+                const promoDate = new Date(promoDateStr);
+                const dateSeed = promoDate.getFullYear() * 10000 + (promoDate.getMonth() + 1) * 100 + promoDate.getDate();
+                const promoPeriodInfo = getPeriodInfo(promoDateStr);
+                bookedForPromoDate = new Set();
+                
+                for (const hour of TIME_SLOTS) {
+                    const result = predictWithModel(promoDateStr, hour, modelWeights);
+                    let closeChance = (result.probability / 100) * 0.4;
+                    if (promoPeriodInfo.isPerf) closeChance *= 1.5;
+                    if (promoPeriodInfo.isHoliday) closeChance *= 1.3;
+                    if (promoPeriodInfo.isExam) closeChance *= 0.3;
+                    if (hour >= 18 && hour <= 20) closeChance *= 1.4;
+                    
+                    const randVal = seededRandomForDate(dateSeed + hour * 7);
+                    if (randVal < closeChance) {
+                        bookedForPromoDate.add(hour);
+                    }
+                }
+                bookedSlotsCache[promoDateStr] = bookedForPromoDate;
+            }
+            
             const lowDemandSlots = [];
+            let bookedExcludedCount = 0;
             
             for (const hour of TIME_SLOTS) {
+                // 이미 예약된 시간대는 프로모션 제외
+                if (bookedForPromoDate.has(hour)) {
+                    bookedExcludedCount++;
+                    continue;
+                }
                 const result = predictWithModel(promoDateStr, hour, modelWeights);
                 if (result.probability < threshold) {
                     lowDemandSlots.push({ hour, prob: result.probability });
                 }
             }
             
+            // 예약 완료 시간대 안내
+            let warningHtml = '';
+            if (bookedExcludedCount > 0) {
+                warningHtml += `<div class="alert alert-warning">⚠️ ${bookedExcludedCount}개 시간대가 이미 예약 완료되어 프로모션 전환이 불가합니다.</div>`;
+            }
+            
             if (lowDemandSlots.length === 0) {
                 document.getElementById('promoWarning').classList.remove('hidden');
-                document.getElementById('promoWarning').innerHTML = `✅ 모든 시간대의 수요가 ${threshold}% 이상입니다. 프로모션이 필요하지 않습니다.`;
-                document.getElementById('promoWarning').className = 'alert alert-success';
+                document.getElementById('promoWarning').innerHTML = warningHtml + `<div class="alert alert-success">✅ 예약 가능한 시간대 중 수요가 ${threshold}% 미만인 시간대가 없습니다.</div>`;
+                document.getElementById('promoWarning').className = '';
                 document.getElementById('promoSlotsContainer').classList.add('hidden');
                 return;
             }
             
-            document.getElementById('promoWarning').classList.add('hidden');
+            document.getElementById('promoWarning').classList.remove('hidden');
+            document.getElementById('promoWarning').innerHTML = warningHtml;
+            document.getElementById('promoWarning').className = '';
             document.getElementById('promoSlotsContainer').classList.remove('hidden');
-            document.getElementById('promoInfo').innerHTML = `<div class="alert alert-warning">📉 ${lowDemandSlots.length}개 저수요 시간대 발견 (수요 ${threshold}% 미만)</div>`;
+            document.getElementById('promoInfo').innerHTML = `<div class="alert alert-info">📉 ${lowDemandSlots.length}개 저수요 시간대 발견 (수요 ${threshold}% 미만, 예약 가능한 시간대만)</div>`;
             
             let slotsHtml = '';
             for (const slot of lowDemandSlots) {
