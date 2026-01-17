@@ -714,14 +714,25 @@
                 <div id="analysisContent" class="section">
                     <h2>📊 공간 활용률 분석 (과거 데이터 기반)</h2>
                     <p style="color: #666; font-size: 0.9rem; margin-bottom: 12px;">📈 과거 예약 데이터를 기반으로 분석한 실제 수요 패턴입니다.</p>
-                    <div style="margin-bottom: 16px;">
-                        <label for="analysisType">분석 유형 선택:</label>
-                        <select id="analysisType" class="date-picker" style="width: auto;" onchange="runAnalysis()">
-                            <option value="monthly">월별 평균 수요</option>
-                            <option value="weekday">요일별 평균 수요</option>
-                            <option value="hourly">시간대별 평균 수요</option>
-                            <option value="period">기간 특성별 수요</option>
-                        </select>
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 16px;">
+                        <div>
+                            <label for="analysisRoom">분석할 연습실:</label>
+                            <select id="analysisRoom" class="date-picker" style="width: auto;" onchange="runAnalysis()">
+                                <option value="all">전체</option>
+                                <option value="A">A룸 (소형) - 1~3인</option>
+                                <option value="B">B룸 (중형) - 3~5인</option>
+                                <option value="C">C룸 (대형) - 5~8인</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="analysisType">분석 유형 선택:</label>
+                            <select id="analysisType" class="date-picker" style="width: auto;" onchange="runAnalysis()">
+                                <option value="monthly">월별 평균 수요</option>
+                                <option value="weekday">요일별 평균 수요</option>
+                                <option value="hourly">시간대별 평균 수요</option>
+                                <option value="period">기간 특성별 수요</option>
+                            </select>
+                        </div>
                     </div>
                     <div id="analysisChart"></div>
                     <p style="color: #666; margin-top: 12px;">💡 수요가 낮은 시간대/기간을 타임세일이나 오픈연습실로 전환하면 수익을 높일 수 있습니다.</p>
@@ -811,7 +822,9 @@
         ];
         
         let trainingData = null;
+        let roomTrainingData = {'A': null, 'B': null, 'C': null};
         let modelWeights = null;
+        let roomModelWeights = {'A': null, 'B': null, 'C': null};
         let selectedDate = null;
         let selectedTimeSlots = [];
         let riskData = {};
@@ -849,11 +862,17 @@
             };
         }
         
-        function generateTrainingData() {
-            const data = [];
+        function generateTrainingDataPerRoom() {
+            const roomData = {'A': [], 'B': [], 'C': []};
             const startDate = new Date(2025, 0, 1);
             const endDate = new Date(2025, 11, 31);
             let seed = 42;
+            
+            const roomCharacteristics = {
+                'A': {baseMultiplier: 1.2, peakBonus: 0.1, groupBonus: 0.0},
+                'B': {baseMultiplier: 1.0, peakBonus: 0.15, groupBonus: 0.1},
+                'C': {baseMultiplier: 0.8, peakBonus: 0.25, groupBonus: 0.2}
+            };
             
             const examPeriods2025 = [
                 ['2025-04-14', '2025-04-25'],
@@ -883,33 +902,44 @@
                 const isExam = isInPeriod(dateStr, examPeriods2025) ? 1 : 0;
                 const isPerf = isInPeriod(dateStr, perfSeasons2025) ? 1 : 0;
                 
-                for (const hour of TIME_SLOTS) {
-                    let baseProb = 0.25;
+                for (const roomId of ['A', 'B', 'C']) {
+                    const chars = roomCharacteristics[roomId];
                     
-                    if (isHoliday) baseProb += 0.20;
-                    if (isExam) baseProb -= 0.15;  // 시험기간에는 연습 수요 감소
-                    if (isPerf) baseProb += 0.30;  // 공연시즌에는 연습 수요 크게 증가
-                    
-                    if (hour >= 18 && hour <= 21) baseProb += 0.30;
-                    else if (hour >= 14 && hour <= 17) baseProb += 0.15;
-                    else if (hour >= 9 && hour <= 11) baseProb += 0.05;
-                    
-                    const isBooked = seededRandom(seed++) < baseProb ? 1 : 0;
-                    
-                    data.push({
-                        month: d.getMonth() + 1,
-                        day: d.getDate(),
-                        weekday: pyWeekday,
-                        hour: hour,
-                        isHoliday: isHoliday,
-                        isExam: isExam,
-                        isPerf: isPerf,
-                        isBooked: isBooked
-                    });
+                    for (const hour of TIME_SLOTS) {
+                        let baseProb = 0.25 * chars.baseMultiplier;
+                        
+                        if (isHoliday) baseProb += 0.20 + chars.groupBonus;
+                        if (isExam) baseProb -= 0.15;
+                        if (isPerf) baseProb += 0.30 + chars.groupBonus;
+                        
+                        if (hour >= 18 && hour <= 21) baseProb += 0.30 + chars.peakBonus;
+                        else if (hour >= 14 && hour <= 17) baseProb += 0.15;
+                        else if (hour >= 9 && hour <= 11) baseProb += 0.05;
+                        
+                        baseProb = Math.min(0.95, baseProb);
+                        const booked = seededRandom(seed++) < baseProb ? 1 : 0;
+                        
+                        roomData[roomId].push({
+                            roomId: roomId,
+                            month: d.getMonth() + 1,
+                            day: d.getDate(),
+                            weekday: pyWeekday,
+                            hour: hour,
+                            isHoliday: isHoliday,
+                            isExam: isExam,
+                            isPerf: isPerf,
+                            booked: booked
+                        });
+                    }
                 }
             }
             
-            return data;
+            return roomData;
+        }
+        
+        function generateTrainingData() {
+            const roomData = generateTrainingDataPerRoom();
+            return [...roomData['A'], ...roomData['B'], ...roomData['C']];
         }
         
         function trainSimulatedModel(data) {
@@ -925,30 +955,30 @@
             
             const holidayData = data.filter(d => d.isHoliday === 1);
             const nonHolidayData = data.filter(d => d.isHoliday === 0);
-            weights.holidayEffect = (holidayData.reduce((s, d) => s + d.isBooked, 0) / holidayData.length) -
-                                   (nonHolidayData.reduce((s, d) => s + d.isBooked, 0) / nonHolidayData.length);
+            weights.holidayEffect = (holidayData.reduce((s, d) => s + (d.booked || d.isBooked || 0), 0) / holidayData.length) -
+                                   (nonHolidayData.reduce((s, d) => s + (d.booked || d.isBooked || 0), 0) / nonHolidayData.length);
             
             const examData = data.filter(d => d.isExam === 1);
             const nonExamData = data.filter(d => d.isExam === 0);
-            weights.examEffect = (examData.reduce((s, d) => s + d.isBooked, 0) / examData.length) -
-                                (nonExamData.reduce((s, d) => s + d.isBooked, 0) / nonExamData.length);
+            weights.examEffect = (examData.reduce((s, d) => s + (d.booked || d.isBooked || 0), 0) / examData.length) -
+                                (nonExamData.reduce((s, d) => s + (d.booked || d.isBooked || 0), 0) / nonExamData.length);
             
             const perfData = data.filter(d => d.isPerf === 1);
             const nonPerfData = data.filter(d => d.isPerf === 0);
-            weights.perfEffect = (perfData.reduce((s, d) => s + d.isBooked, 0) / perfData.length) -
-                                (nonPerfData.reduce((s, d) => s + d.isBooked, 0) / nonPerfData.length);
+            weights.perfEffect = (perfData.reduce((s, d) => s + (d.booked || d.isBooked || 0), 0) / perfData.length) -
+                                (nonPerfData.reduce((s, d) => s + (d.booked || d.isBooked || 0), 0) / nonPerfData.length);
             
             const eveningData = data.filter(d => d.hour >= 18 && d.hour <= 21);
             const afternoonData = data.filter(d => d.hour >= 14 && d.hour <= 17);
             const morningData = data.filter(d => d.hour >= 9 && d.hour <= 11);
             const otherData = data.filter(d => d.hour >= 12 && d.hour <= 13);
             
-            const otherAvg = otherData.reduce((s, d) => s + d.isBooked, 0) / otherData.length;
-            weights.eveningEffect = (eveningData.reduce((s, d) => s + d.isBooked, 0) / eveningData.length) - otherAvg;
-            weights.afternoonEffect = (afternoonData.reduce((s, d) => s + d.isBooked, 0) / afternoonData.length) - otherAvg;
-            weights.morningEffect = (morningData.reduce((s, d) => s + d.isBooked, 0) / morningData.length) - otherAvg;
+            const otherAvg = otherData.reduce((s, d) => s + (d.booked || d.isBooked || 0), 0) / otherData.length;
+            weights.eveningEffect = (eveningData.reduce((s, d) => s + (d.booked || d.isBooked || 0), 0) / eveningData.length) - otherAvg;
+            weights.afternoonEffect = (afternoonData.reduce((s, d) => s + (d.booked || d.isBooked || 0), 0) / afternoonData.length) - otherAvg;
+            weights.morningEffect = (morningData.reduce((s, d) => s + (d.booked || d.isBooked || 0), 0) / morningData.length) - otherAvg;
             
-            weights.baseProb = data.reduce((s, d) => s + d.isBooked, 0) / data.length;
+            weights.baseProb = data.reduce((s, d) => s + (d.booked || d.isBooked || 0), 0) / data.length;
             
             return weights;
         }
@@ -994,15 +1024,23 @@
         }
         
         function initializeModel() {
-            document.getElementById('dataStatus').innerHTML = '⏳ 학습 데이터 생성 및 모델 학습 중...';
+            document.getElementById('dataStatus').innerHTML = '⏳ 연습실별 학습 데이터 생성 및 모델 학습 중...';
             document.getElementById('dataStatus').className = 'alert alert-info';
             
             setTimeout(() => {
-                trainingData = generateTrainingData();
+                roomTrainingData = generateTrainingDataPerRoom();
+                trainingData = [...roomTrainingData['A'], ...roomTrainingData['B'], ...roomTrainingData['C']];
+                
+                roomModelWeights = {
+                    'A': trainSimulatedModel(roomTrainingData['A']),
+                    'B': trainSimulatedModel(roomTrainingData['B']),
+                    'C': trainSimulatedModel(roomTrainingData['C'])
+                };
                 modelWeights = trainSimulatedModel(trainingData);
                 
+                const totalRecords = trainingData.length;
                 document.getElementById('dataStatus').className = 'alert alert-success';
-                document.getElementById('dataStatus').innerHTML = `✅ ML 모델 학습 완료! (${trainingData.length}개 레코드)`;
+                document.getElementById('dataStatus').innerHTML = `✅ 연습실별 ML 모델 학습 완료! (총 ${totalRecords.toLocaleString()}개 레코드 - A룸, B룸, C룸 개별 모델)`;
                 
                 document.getElementById('dataPreviewSection').classList.remove('hidden');
                 renderDataPreview();
@@ -1053,7 +1091,7 @@
                         <td>${row.isHoliday ? '예' : '아니오'}</td>
                         <td>${row.isExam ? '예' : '아니오'}</td>
                         <td>${row.isPerf ? '예' : '아니오'}</td>
-                        <td>${row.isBooked ? '예약됨' : '미예약'}</td>
+                        <td>${row.booked ? '예약됨' : '미예약'}</td>
                     </tr>
                 `;
             }
@@ -1135,26 +1173,24 @@
             riskData = {};
             bookedSlots = new Set();
             
-            // 날짜별 시드로 일관된 마감 시간대 생성
             const date = new Date(dateStr);
-            const dateSeed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+            const dateSeed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate() + selectedRoomId.charCodeAt(0);
             
-            // 먼저 예측값 계산
+            const currentRoomWeights = roomModelWeights[selectedRoomId] || modelWeights;
+            
             for (const hour of TIME_SLOTS) {
-                const result = predictWithModel(dateStr, hour, modelWeights);
+                const result = predictWithModel(dateStr, hour, currentRoomWeights);
                 riskData[hour] = { probability: result.probability, leadTime: result.leadTime, isBooked: false };
             }
             
-            // 수요 기반 마감 시간대 결정
             for (const hour of TIME_SLOTS) {
                 const prob = riskData[hour].probability;
-                let closeChance = (prob / 100) * 0.4;  // 최대 40% 확률로 마감
+                let closeChance = (prob / 100) * 0.4;
                 
-                if (currentPeriodInfo.isPerf) closeChance *= 1.5;  // 공연시즌엔 마감 확률 1.5배
-                if (currentPeriodInfo.isHoliday) closeChance *= 1.3;  // 휴일엔 마감 확률 1.3배
-                if (currentPeriodInfo.isExam) closeChance *= 0.3;  // 시험기간엔 마감 확률 0.3배
+                if (currentPeriodInfo.isPerf) closeChance *= 1.5;
+                if (currentPeriodInfo.isHoliday) closeChance *= 1.3;
+                if (currentPeriodInfo.isExam) closeChance *= 0.3;
                 
-                // 저녁 피크 시간대 마감 확률 증가
                 if (hour >= 18 && hour <= 20) closeChance *= 1.4;
                 
                 const randVal = seededRandomForDate(dateSeed + hour * 7);
@@ -1164,8 +1200,8 @@
                 }
             }
             
-            // 마감된 시간대를 캐시에 저장
-            bookedSlotsCache[dateStr] = new Set(bookedSlots);
+            const cacheKey = `${selectedRoomId}_${dateStr}`;
+            bookedSlotsCache[cacheKey] = new Set(bookedSlots);
             
             // 마감된 시간대가 선택되어 있으면 제거
             selectedTimeSlots = selectedTimeSlots.filter(h => !bookedSlots.has(h));
@@ -1441,6 +1477,13 @@
             selectedRoomId = document.getElementById('roomSelect').value;
             const room = ROOMS[selectedRoomId];
             document.getElementById('roomPrice').textContent = room.hourlyRate.toLocaleString();
+            
+            selectedTimeSlots = [];
+            
+            if (selectedDate && roomModelWeights[selectedRoomId]) {
+                const dateStr = document.getElementById('datePicker').value;
+                calculateRisks(dateStr);
+            }
             updateBookingSection();
         }
         
@@ -1579,9 +1622,23 @@
         let bookedSlotsCache = {};
         
         function runAnalysis() {
-            if (!trainingData || trainingData.length === 0) return;
+            if (!roomTrainingData || !roomTrainingData['A']) return;
             
+            const analysisRoom = document.getElementById('analysisRoom').value;
             const analysisType = document.getElementById('analysisType').value;
+            
+            let analysisData;
+            let roomLabel;
+            if (analysisRoom === 'all') {
+                analysisData = [...roomTrainingData['A'], ...roomTrainingData['B'], ...roomTrainingData['C']];
+                roomLabel = '전체 연습실';
+            } else {
+                analysisData = roomTrainingData[analysisRoom];
+                roomLabel = `${analysisRoom}룸`;
+            }
+            
+            if (!analysisData || analysisData.length === 0) return;
+            
             let labels = [];
             let values = [];
             let colors = [];
@@ -1595,7 +1652,7 @@
             
             if (analysisType === 'monthly') {
                 const monthlyData = {};
-                trainingData.forEach(row => {
+                analysisData.forEach(row => {
                     const month = row.month;
                     if (!monthlyData[month]) monthlyData[month] = { booked: 0, total: 0 };
                     monthlyData[month].total++;
@@ -1611,7 +1668,7 @@
                 }
             } else if (analysisType === 'weekday') {
                 const weekdayData = {};
-                trainingData.forEach(row => {
+                analysisData.forEach(row => {
                     const wd = row.weekday;
                     if (!weekdayData[wd]) weekdayData[wd] = { booked: 0, total: 0 };
                     weekdayData[wd].total++;
@@ -1627,7 +1684,7 @@
                 }
             } else if (analysisType === 'hourly') {
                 const hourData = {};
-                trainingData.forEach(row => {
+                analysisData.forEach(row => {
                     const hour = row.hour;
                     if (!hourData[hour]) hourData[hour] = { booked: 0, total: 0 };
                     hourData[hour].total++;
@@ -1643,7 +1700,7 @@
                 }
             } else if (analysisType === 'period') {
                 const periodData = {'평일': {booked: 0, total: 0}, '휴일/주말': {booked: 0, total: 0}, '시험기간': {booked: 0, total: 0}, '공연시즌': {booked: 0, total: 0}};
-                trainingData.forEach(row => {
+                analysisData.forEach(row => {
                     if (row.isExam) {
                         periodData['시험기간'].total++;
                         if (row.booked) periodData['시험기간'].booked++;
@@ -1679,10 +1736,10 @@
             };
             
             const titles = {
-                'monthly': '월별 평균 예약 수요 (과거 데이터)',
-                'weekday': '요일별 평균 예약 수요 (과거 데이터)',
-                'hourly': '시간대별 평균 예약 수요 (과거 데이터)',
-                'period': '기간 특성별 평균 예약 수요 (과거 데이터)'
+                'monthly': `월별 평균 예약 수요 - ${roomLabel} (과거 데이터)`,
+                'weekday': `요일별 평균 예약 수요 - ${roomLabel} (과거 데이터)`,
+                'hourly': `시간대별 평균 예약 수요 - ${roomLabel} (과거 데이터)`,
+                'period': `기간 특성별 평균 예약 수요 - ${roomLabel} (과거 데이터)`
             };
             
             const layout = {
@@ -1709,7 +1766,8 @@
             }
             
             // 해당 날짜의 마감(예약완료) 시간대 확인
-            let bookedForPromoDate = bookedSlotsCache[promoDateStr];
+            const promoCacheKey = `${selectedRoomId}_${promoDateStr}`;
+            let bookedForPromoDate = bookedSlotsCache[promoCacheKey];
             if (!bookedForPromoDate) {
                 // 캐시에 없으면 계산
                 const promoDate = new Date(promoDateStr);
@@ -1730,7 +1788,7 @@
                         bookedForPromoDate.add(hour);
                     }
                 }
-                bookedSlotsCache[promoDateStr] = bookedForPromoDate;
+                bookedSlotsCache[promoCacheKey] = bookedForPromoDate;
             }
             
             const lowDemandSlots = [];

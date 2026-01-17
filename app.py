@@ -124,10 +124,19 @@ def load_real_data():
         return df
     return None
 
-def generate_training_data():
+def generate_training_data_per_room():
+    """연습실별 개별 학습 데이터 생성 - 각 연습실 특성 반영"""
     np.random.seed(42)
     
-    data = []
+    room_data = {'A': [], 'B': [], 'C': []}
+    
+    # 연습실별 특성 (기본 수요 배율)
+    room_characteristics = {
+        'A': {'base_multiplier': 1.2, 'peak_bonus': 0.1, 'group_bonus': 0.0},   # 소형: 개인 연습 수요 높음
+        'B': {'base_multiplier': 1.0, 'peak_bonus': 0.15, 'group_bonus': 0.1},  # 중형: 균형잡힌 수요
+        'C': {'base_multiplier': 0.8, 'peak_bonus': 0.25, 'group_bonus': 0.2},  # 대형: 그룹/공연 수요 높음
+    }
+    
     start_date = datetime(2025, 1, 1)
     end_date = datetime(2025, 12, 31)
     current_date = start_date
@@ -168,72 +177,81 @@ def generate_training_data():
         is_exam = is_in_period(current_date, exam_periods_2025)
         is_perf = is_in_period(current_date, perf_seasons_2025)
         
-        for hour in TIME_SLOTS:
-            base_prob = 0.25
+        for room_id in ['A', 'B', 'C']:
+            chars = room_characteristics[room_id]
             
-            if is_holiday:
-                base_prob += 0.20
-            
-            if is_exam:
-                base_prob -= 0.15  # 시험기간에는 연습 수요 감소
-            
-            if is_perf:
-                base_prob += 0.30  # 공연시즌에는 연습 수요 크게 증가
-            
-            if 18 <= hour <= 21:
-                base_prob += 0.30
-            elif 14 <= hour <= 17:
-                base_prob += 0.15
-            elif 9 <= hour <= 11:
-                base_prob += 0.05
-            
-            lead_time_ranges = [
-                (0, 6),      # 당일 예약 (0~6시간 전)
-                (6, 24),     # 하루 전 예약
-                (24, 72),    # 1~3일 전 예약
-                (72, 168),   # 3~7일 전 예약
-                (168, 336),  # 1~2주 전 예약
-                (336, 720),  # 2주~1달 전 예약
-            ]
-            
-            for lead_min, lead_max in lead_time_ranges:
-                lead_time = np.random.uniform(lead_min, lead_max)
+            for hour in TIME_SLOTS:
+                base_prob = 0.25 * chars['base_multiplier']
                 
-                time_factor = 1.0
-                if lead_time < 6:
-                    time_factor = 0.85
-                elif lead_time < 24:
-                    time_factor = 0.70
-                elif lead_time < 72:
-                    time_factor = 0.55
-                elif lead_time < 168:
-                    time_factor = 0.40
-                elif lead_time < 336:
-                    time_factor = 0.25
-                else:
-                    time_factor = 0.15
+                if is_holiday:
+                    base_prob += 0.20 + chars['group_bonus']
                 
-                adjusted_prob = base_prob * time_factor
-                is_booked = 1 if np.random.random() < adjusted_prob else 0
-                is_cancelled = 1 if is_booked and np.random.random() < 0.05 else 0
+                if is_exam:
+                    base_prob -= 0.15
                 
-                data.append({
-                    '연도': current_date.year,
-                    '월': current_date.month,
-                    '일': current_date.day,
-                    '요일': weekday,
-                    '시간': hour,
-                    '휴일 여부': is_holiday,
-                    '시험기간 여부': is_exam,
-                    '공연시즌 여부': is_perf,
-                    '예약 여부': is_booked,
-                    '리드타임_시간': round(lead_time, 1),
-                    '취소 여부': is_cancelled
-                })
+                if is_perf:
+                    base_prob += 0.30 + chars['group_bonus']
+                
+                if 18 <= hour <= 21:
+                    base_prob += 0.30 + chars['peak_bonus']
+                elif 14 <= hour <= 17:
+                    base_prob += 0.15
+                elif 9 <= hour <= 11:
+                    base_prob += 0.05
+                
+                lead_time_ranges = [
+                    (0, 6),
+                    (6, 24),
+                    (24, 72),
+                    (72, 168),
+                    (168, 336),
+                    (336, 720),
+                ]
+                
+                for lead_min, lead_max in lead_time_ranges:
+                    lead_time = np.random.uniform(lead_min, lead_max)
+                    
+                    time_factor = 1.0
+                    if lead_time < 6:
+                        time_factor = 0.85
+                    elif lead_time < 24:
+                        time_factor = 0.70
+                    elif lead_time < 72:
+                        time_factor = 0.55
+                    elif lead_time < 168:
+                        time_factor = 0.40
+                    elif lead_time < 336:
+                        time_factor = 0.25
+                    else:
+                        time_factor = 0.15
+                    
+                    adjusted_prob = min(0.95, base_prob * time_factor)
+                    is_booked = 1 if np.random.random() < adjusted_prob else 0
+                    is_cancelled = 1 if is_booked and np.random.random() < 0.05 else 0
+                    
+                    room_data[room_id].append({
+                        '연습실': room_id,
+                        '연도': current_date.year,
+                        '월': current_date.month,
+                        '일': current_date.day,
+                        '요일': weekday,
+                        '시간': hour,
+                        '휴일 여부': is_holiday,
+                        '시험기간 여부': is_exam,
+                        '공연시즌 여부': is_perf,
+                        '예약 여부': is_booked,
+                        '리드타임_시간': round(lead_time, 1),
+                        '취소 여부': is_cancelled
+                    })
         
         current_date += timedelta(days=1)
     
-    return pd.DataFrame(data)
+    return {room_id: pd.DataFrame(data) for room_id, data in room_data.items()}
+
+def generate_training_data():
+    """기존 호환성을 위한 래퍼 함수"""
+    room_data = generate_training_data_per_room()
+    return pd.concat(room_data.values(), ignore_index=True)
 
 def get_risk_level(probability):
     if probability >= 75:
@@ -276,7 +294,7 @@ def get_period_info(date_obj):
         'is_perf': is_perf
     }
 
-def create_time_slot_chart(time_data, selected_slot=None):
+def create_time_slot_chart(time_data, selected_slot=None, room_name=None):
     hours = [f"{h}:00~{h+1}:00" for h in TIME_SLOTS]
     probabilities = [time_data[h]['probability'] for h in TIME_SLOTS]
     colors = [time_data[h]['color'] for h in TIME_SLOTS]
@@ -298,9 +316,11 @@ def create_time_slot_chart(time_data, selected_slot=None):
         )
     ])
     
+    title_text = f"{room_name} - 시간대별 예약 마감 위험도 (ML 예측)" if room_name else "시간대별 예약 마감 위험도 (ML 예측)"
+    
     fig.update_layout(
         title=dict(
-            text="시간대별 예약 마감 위험도 (ML 예측)",
+            text=title_text,
             font=dict(size=18)
         ),
         xaxis_title="시간대",
@@ -341,44 +361,83 @@ def render_model_training(key_prefix=""):
     
     with col1:
         if st.button("📊 학습 데이터 생성", type="primary", use_container_width=True, key=f"{key_prefix}train_btn"):
-            with st.spinner("학습 데이터 생성 및 모델 학습 중..."):
-                training_data = generate_training_data()
-                st.session_state['training_data'] = training_data
-                st.session_state['predictor'] = PracticeRoomPredictor(training_data)
+            with st.spinner("연습실별 학습 데이터 생성 및 모델 학습 중..."):
+                room_training_data = generate_training_data_per_room()
+                st.session_state['room_training_data'] = room_training_data
+                st.session_state['room_predictors'] = {
+                    room_id: PracticeRoomPredictor(df) 
+                    for room_id, df in room_training_data.items()
+                }
+                combined_data = pd.concat(room_training_data.values(), ignore_index=True)
+                st.session_state['training_data'] = combined_data
+                st.session_state['predictor'] = PracticeRoomPredictor(combined_data)
                 st.session_state['data_source'] = "생성된 학습 데이터"
-            st.success("ML 모델 학습 완료!")
+            st.success("연습실별 ML 모델 학습 완료! (A룸, B룸, C룸)")
             st.rerun()
     
     with col2:
         real_data_available = os.path.exists("attached_assets/practice_room_ML_data_2025_1768532371118.csv")
         if real_data_available:
             if st.button("📁 실제 데이터로 학습", use_container_width=True, key=f"{key_prefix}real_btn"):
-                with st.spinner("실제 데이터 로드 및 모델 학습 중..."):
+                with st.spinner("실제 데이터 로드 및 연습실별 모델 학습 중..."):
                     real_data = load_real_data()
-                    st.session_state['training_data'] = real_data
-                    st.session_state['predictor'] = PracticeRoomPredictor(real_data)
+                    if '연습실' in real_data.columns:
+                        room_training_data = {
+                            room_id: real_data[real_data['연습실'] == room_id].copy()
+                            for room_id in ['A', 'B', 'C']
+                        }
+                    else:
+                        room_training_data = generate_training_data_per_room()
+                    st.session_state['room_training_data'] = room_training_data
+                    st.session_state['room_predictors'] = {
+                        room_id: PracticeRoomPredictor(df) if len(df) > 0 else None
+                        for room_id, df in room_training_data.items()
+                    }
+                    combined_data = pd.concat(room_training_data.values(), ignore_index=True)
+                    st.session_state['training_data'] = combined_data
+                    st.session_state['predictor'] = PracticeRoomPredictor(combined_data)
                     st.session_state['data_source'] = "실제 CSV 데이터"
-                st.success("ML 모델 학습 완료!")
+                st.success("연습실별 ML 모델 학습 완료!")
                 st.rerun()
     
     with col3:
-        if 'predictor' in st.session_state:
-            st.info(f"✅ {st.session_state['data_source']}로 학습 완료 ({len(st.session_state['training_data'])}개 레코드)")
+        if 'room_predictors' in st.session_state:
+            total_records = sum(len(df) for df in st.session_state['room_training_data'].values())
+            st.info(f"✅ {st.session_state['data_source']}로 학습 완료\n\n📊 총 {total_records:,}개 레코드 (연습실별 개별 모델)")
 
 def analyze_utilization(predictor):
     st.subheader("📊 공간 활용률 분석 (과거 데이터 기반)")
     
     st.caption("📈 과거 예약 데이터를 기반으로 분석한 실제 수요 패턴입니다.")
     
-    training_data = st.session_state.get('training_data')
-    if training_data is None:
+    room_training_data = st.session_state.get('room_training_data')
+    if room_training_data is None:
         st.warning("학습 데이터가 없습니다.")
         return
     
-    analysis_type = st.selectbox(
-        "분석 유형 선택",
-        ["월별 평균 수요", "요일별 평균 수요", "시간대별 평균 수요", "기간 특성별 수요"]
-    )
+    col_room, col_analysis = st.columns(2)
+    
+    with col_room:
+        room_options = ["전체"] + [f"{room_id}룸 ({ROOMS[room_id]['name']}, {ROOMS[room_id]['capacity']})" for room_id in ['A', 'B', 'C']]
+        selected_room_option = st.selectbox("분석할 연습실", room_options, key="analysis_room")
+        
+        if selected_room_option == "전체":
+            training_data = pd.concat(room_training_data.values(), ignore_index=True)
+            room_label = "전체 연습실"
+        else:
+            selected_room_id = selected_room_option[0]
+            training_data = room_training_data.get(selected_room_id)
+            room_label = f"{selected_room_id}룸"
+    
+    with col_analysis:
+        analysis_type = st.selectbox(
+            "분석 유형 선택",
+            ["월별 평균 수요", "요일별 평균 수요", "시간대별 평균 수요", "기간 특성별 수요"]
+        )
+    
+    if training_data is None or len(training_data) == 0:
+        st.warning("선택한 연습실의 학습 데이터가 없습니다.")
+        return
     
     results = []
     
@@ -394,7 +453,7 @@ def analyze_utilization(predictor):
                    marker_color=['#FF4B4B' if v > 60 else '#FFA500' if v > 40 else '#FFD700' if v > 25 else '#00CC66' 
                                  for v in df['평균 수요(%)']])
         ])
-        fig.update_layout(title="월별 평균 예약 수요 (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="월")
+        fig.update_layout(title=f"월별 평균 예약 수요 - {room_label} (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="월")
         st.plotly_chart(fig, use_container_width=True)
         
     elif analysis_type == "요일별 평균 수요":
@@ -407,7 +466,7 @@ def analyze_utilization(predictor):
         colors = ['#FF4B4B' if v > 60 else '#FFA500' if v > 40 else '#FFD700' if v > 25 else '#00CC66' 
                   for v in df['평균 수요(%)']]
         fig = go.Figure(data=[go.Bar(x=df['요일'], y=df['평균 수요(%)'], marker_color=colors)])
-        fig.update_layout(title="요일별 평균 예약 수요 (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="요일")
+        fig.update_layout(title=f"요일별 평균 예약 수요 - {room_label} (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="요일")
         st.plotly_chart(fig, use_container_width=True)
         
     elif analysis_type == "시간대별 평균 수요":
@@ -420,7 +479,7 @@ def analyze_utilization(predictor):
         colors = ['#FF4B4B' if v > 60 else '#FFA500' if v > 40 else '#FFD700' if v > 25 else '#00CC66' 
                   for v in df['평균 수요(%)']]
         fig = go.Figure(data=[go.Bar(x=df['시간'], y=df['평균 수요(%)'], marker_color=colors)])
-        fig.update_layout(title="시간대별 평균 예약 수요 (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="시간")
+        fig.update_layout(title=f"시간대별 평균 예약 수요 - {room_label} (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="시간")
         st.plotly_chart(fig, use_container_width=True)
         
     elif analysis_type == "기간 특성별 수요":
@@ -447,7 +506,7 @@ def analyze_utilization(predictor):
         df = pd.DataFrame(results)
         colors = ['#00CC66', '#FFA500', '#3498db', '#FF4B4B'][:len(results)]
         fig = go.Figure(data=[go.Bar(x=df['기간'], y=df['평균 수요(%)'], marker_color=colors)])
-        fig.update_layout(title="기간 특성별 평균 예약 수요 (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="기간")
+        fig.update_layout(title=f"기간 특성별 평균 예약 수요 - {room_label} (과거 데이터)", yaxis_title="예약률 (%)", xaxis_title="기간")
         st.plotly_chart(fig, use_container_width=True)
     
     st.caption("💡 수요가 낮은 시간대/기간을 타임세일이나 오픈연습실로 전환하면 수익을 높일 수 있습니다.")
@@ -686,20 +745,26 @@ with tab_customer:
         
         st.divider()
         
-        st.subheader("3. 시간대별 예약 마감 위험도 (ML 예측)")
+        st.subheader(f"3. {selected_room['name']} - 시간대별 예약 마감 위험도 (ML 예측)")
         
-        st.caption("📊 **리드타임 기반 예측**: 현재 시점 기준으로 예약이 마감될 확률을 예측합니다.")
+        st.caption(f"📊 **{selected_room_id}룸 전용 예측**: 해당 연습실의 과거 패턴을 기반으로 마감 확률을 예측합니다.")
         
-        predictor = st.session_state['predictor']
+        room_predictors = st.session_state.get('room_predictors', {})
+        predictor = room_predictors.get(selected_room_id, st.session_state.get('predictor'))
+        
+        if predictor is None:
+            st.warning("해당 연습실의 예측 모델이 없습니다.")
+            st.stop()
+        
         time_data = {}
         
-        date_seed = selected_date.toordinal()
+        date_seed = selected_date.toordinal() + ord(selected_room_id)
         np.random.seed(date_seed)
         
         if 'booked_slots_cache' not in st.session_state:
             st.session_state['booked_slots_cache'] = {}
         
-        booked_cache_key = selected_date.strftime('%Y-%m-%d')
+        booked_cache_key = f"{selected_room_id}_{selected_date.strftime('%Y-%m-%d')}"
         
         if booked_cache_key not in st.session_state['booked_slots_cache']:
             booked_slots = set()
@@ -742,7 +807,7 @@ with tab_customer:
         st.session_state['selected_times'] = [h for h in st.session_state['selected_times'] if h not in booked_slots]
         selected_times = st.session_state.get('selected_times', [])
         
-        chart = create_time_slot_chart(time_data, selected_times[0] if selected_times else None)
+        chart = create_time_slot_chart(time_data, selected_times[0] if selected_times else None, room_name=selected_room['name'])
         st.plotly_chart(chart, use_container_width=True)
         
         booked_count = len(booked_slots)
